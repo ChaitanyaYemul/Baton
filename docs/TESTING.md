@@ -5,6 +5,7 @@
 - `npm run build`: TypeScript validation and Vite production build passed.
 - `.venv/Scripts/python.exe -m pytest -q`: **35 passed** after Supabase/advanced features. One upstream Starlette warning reports that HTTPX test transport is deprecated in favour of HTTPX2; tests still pass. Each run uses a separate workspace-local temporary directory so concurrent runs cannot overwrite the same fixture databases.
 - `git diff --check`: passed before initial commit.
+- GitHub Actions also passed on Linux for the implementation release: [Baton checks](https://github.com/ChaitanyaYemul/Baton/actions/runs/42457051731).
 
 The suite checks the judge's import → reconstruction → review → publish → successor journey, publication blocking, source quote existence, forged citations, paraphrase demotion, immutable published content, all-role leak checks, direct evidence authorization, historical/export/search restrictions, source-label revocation, deleted evidence, malformed/empty/duplicate input, unauthorised import, SSRF URL rejection, redaction, chat timestamps, leaver attestation, sudden-exit restrictions, session requirements, mutation header protection, multi-source intersection, acknowledgement invalidation, model-outage fallback, duplicate source lines and malformed dates.
 
@@ -34,4 +35,4 @@ The hosted successor PDF was parsed and did not contain planted lead-only values
 
 ## Not yet verified
 
-Public GitHub import against a real target, Docker runtime, GitHub Actions on Linux, wider model-quality/latency benchmarks, assistive-technology checks and real-user feedback remain outstanding. Gemini validation was explicitly skipped; Groq is the selected provider. A live Groq connection check returned one schema-valid claim from a small synthetic example. This does not establish a recall percentage or onboarding-time reduction. GitHub/provider network errors remain recoverable, with labelled offline extraction as the fallback.
+Public GitHub import against a real target, Docker runtime, wider model-quality/latency benchmarks, assistive-technology checks and real-user feedback remain outstanding. Gemini validation was explicitly skipped; Groq is the selected provider. Live Groq extraction now passes on the complete synthetic fixture as described above. This does not establish a recall percentage or onboarding-time reduction. GitHub/provider network errors remain recoverable, with labelled offline extraction as the fallback.

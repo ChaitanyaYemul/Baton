@@ -134,7 +134,7 @@ def test_repeated_lines_and_invalid_dates_are_safe(monkeypatch):
 
 def test_import_failures_and_redaction(clients):
     c=clients['reviewer']
-    for name,text in [('empty.txt','   '),('bad.json','{broken'),('empty.csv','a,b\n')]:
+    for name,text in [('empty.txt','   '),('bad.json','{broken'),('empty.csv','a,b\n'),('null.json','null'),('number.json','7'),('string.json','"notes"')]:
         assert c.post('/api/sources',json={'name':name,'text':text,'authorised':True}).status_code==400
     assert c.post('/api/sources',json={'name':'note.md','text':'Decision: keep this private.','authorised':False}).status_code==400
     data={'name':'note.md','text':'Decision: test payments. Owner: Aarav. Email demo@example.com API_KEY=secret1234567890','authorised':True}

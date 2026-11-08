@@ -41,6 +41,8 @@ def parse_source(name, text):
             data = json.loads(text)
         except ValueError as exc:
             raise ValueError('Invalid JSON export') from exc
+        if not isinstance(data,(dict,list)):
+            raise ValueError('JSON export must be an object or a list of tasks/messages')
         rows = data if isinstance(data, list) else data.get('tasks', data.get('messages', [data]))
         if not isinstance(rows, list):
             raise ValueError('JSON must contain a list, tasks or messages')
