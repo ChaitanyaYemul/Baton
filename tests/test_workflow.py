@@ -175,3 +175,80 @@ def test_api_retries_fallback_results_but_caches_success(clients,monkeypatch):
     assert c.post('/api/reconstruct').status_code==200
     assert c.post('/api/reconstruct').status_code==200
     assert len(calls)==2
+
+def test_owned_actions_and_acknowledgement_invalidation(clients):
+    reviewer=clients['reviewer'];setup(reviewer);finish(reviewer)
+    ws=reviewer.get('/api/workspace').json()
+    claim=next(c for c in ws['approved_claims'] if c.get('type')=='risk')
+    payload={'claim_id':claim['id'],'title':'Add a duplicate webhook test','owner':'Meera','phase':'Day 1','due':'2026-11-15','status':'todo'}
+    created=reviewer.post('/api/actions',json=payload)
+    assert created.status_code==200,created.text
+    action=created.json(); successor=clients['successor']
+    assert successor.post('/api/acknowledge',json={'section':'next actions'}).status_code==200
+    update={k:v for k,v in payload.items() if k!='claim_id'}; update['status']='done'
+    assert clients['coordinator'].patch('/api/actions/'+action['id'],json=update).status_code==403
+    assert successor.patch('/api/actions/'+action['id'],json=update).status_code==200
+    ws=successor.get('/api/workspace').json()
+    assert ws['actions'][0]['status']=='done'
+    assert ws['receipt_stale'] and not ws['acks']
+    hidden=next(c for c in reviewer.get('/api/workspace').json()['approved_claims'] if '42000' in c['text'])
+    assert reviewer.post('/api/actions',json={**payload,'claim_id':hidden['id'],'title':'Review college reserve of 42000 INR'}).status_code==200
+    assert '42000' not in successor.get('/api/workspace').text
+    source=next(x for x in reviewer.get('/api/workspace').json()['sources'] if x['name']=='sync-notes.md')
+    assert reviewer.patch('/api/sources/'+source['id'],json={'access':'leads'}).status_code==200
+    assert successor.patch('/api/actions/'+action['id'],json=update).status_code==404
+
+def test_question_assignment_and_sudden_exit_fallback(clients):
+    reviewer=clients['reviewer'];ws=setup(reviewer)
+    gap=next(c for c in ws['claims'] if c['status']=='gap')
+    payload={'claim_id':gap['id'],'assignee':'leaver','priority':'high','due':'2026-11-12'}
+    assert reviewer.post('/api/questions/assign',json=payload).json()['assignee']=='leaver'
+    assert clients['successor'].post('/api/questions/assign',json=payload).status_code==403
+    assert clients['leaver'].patch('/api/claims/'+gap['id'],json={'action':'attest','text':'Kabir owns the cron migration.','owner':'Kabir'}).status_code==200
+    q=reviewer.get('/api/workspace').json()['questions'][0]
+    assert q['answered_by']=='Aarav' and q['answered_at']
+    # A new gap remains routed to the reviewer when the departing member is unavailable.
+    reviewer.patch('/api/settings',json={'sudden_exit':True})
+    with main.state() as s:
+        claim=next(c for c in s['claims'] if c['id']==gap['id']);claim['status']='gap'
+    assert reviewer.post('/api/questions/assign',json=payload).json()['assignee']=='reviewer'
+
+def test_named_accounts_invites_and_immediate_revocation(clients):
+    reviewer=clients['reviewer']
+    invitation=reviewer.post('/api/invites',json={'username':'taylor','name':'Taylor','role':'successor'})
+    assert invitation.status_code==200,invitation.text
+    code=invitation.json()['code']
+    member=TestClient(main.app);member.headers['X-Baton-Request']='1'
+    assert member.post('/api/register',json={'code':code,'password':'too-short'}).status_code==422
+    assert member.post('/api/register',json={'code':code,'password':'synthetic-only-password'}).status_code==200
+    assert member.post('/api/register',json={'code':code,'password':'synthetic-only-password'}).status_code==400
+    result=member.post('/api/login',json={'username':'taylor','role':'reviewer','password':'synthetic-only-password'})
+    assert result.status_code==200 and result.json()['role']=='successor'
+    assert member.get('/api/workspace').json()['user']['name']=='Taylor'
+    assert member.post('/api/publish').status_code==403
+    assert member.get('/api/members').status_code==403
+    people=reviewer.get('/api/members').json()
+    assert 'password' not in str(people) and 'salt' not in str(people)
+    assert reviewer.patch('/api/members/'+people[0]['id'],json={'active':False}).status_code==200
+    assert member.get('/api/workspace').status_code==401
+    assert member.post('/api/login',json={'username':'taylor','password':'synthetic-only-password'}).status_code==401
+
+def test_disabling_demo_rejects_previously_seeded_demo_passwords(clients,monkeypatch):
+    monkeypatch.setenv('BATON_DEMO','0')
+    for role in main.ROLES:
+        c=TestClient(main.app)
+        assert c.post('/api/login',json={'role':role,'password':'baton-demo-2026'}).status_code==401
+    assert c.get('/api/config').json()=={'demo':False,'roles':[]}
+    monkeypatch.setenv('BATON_REVIEWER_PASSWORD','synthetic-private-password')
+    assert c.get('/api/config').json()=={'demo':False,'roles':['reviewer']}
+
+def test_version_diff_includes_owner_and_historical_receipts(clients):
+    reviewer=clients['reviewer'];setup(reviewer);finish(reviewer)
+    claim=next(c for c in reviewer.get('/api/workspace').json()['approved_claims'] if c['status']=='verified')
+    reviewer.patch('/api/claims/'+claim['id'],json={'action':'attest','text':claim['text'],'owner':'New owner'})
+    reviewer.post('/api/approve-verified'); assert reviewer.post('/api/publish').status_code==200
+    version=reviewer.get('/api/versions/2').json()
+    changed=next(c for c in version['claims'] if c['id']==claim['id'])
+    assert changed['change']=='changed' and 'owner' in changed['changed_fields']
+    assert changed['previous']['owner']==claim['owner']
+    assert reviewer.get('/api/evidence/'+claim['id']+'?version=1').status_code==200

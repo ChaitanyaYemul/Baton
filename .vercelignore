@@ -1,0 +1,11 @@
+.env
+.env.*
+.venv/
+data/
+tmp/
+node_modules/
+.git/
+.pytest_cache/
+.pytest-tmp/
+__pycache__/
+supabase/.temp/

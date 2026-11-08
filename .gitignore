@@ -9,3 +9,7 @@ data/
 tmp/
 *.pyc
 *.tsbuildinfo
+supabase/.temp/
+
+.vercel
+.env*

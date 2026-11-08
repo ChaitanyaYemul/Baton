@@ -4,6 +4,10 @@
 
 Baton turns authorised notes, task exports, git history and conversations into an evidence-linked claim ledger. A reviewer resolves uncertainty and publishes a numbered snapshot. Successors receive approved knowledge filtered by their access to **all** its underlying evidence.
 
+Production address: **https://baton-ruddy.vercel.app**. The site is publicly reachable; project data requires a private account. Shared demo passwords are disabled in production. See [deployment details](docs/DEPLOYMENT.md) and [observed testing](docs/TESTING.md).
+
+The owner can sign in as **Kabir / Reviewer** using `BATON_REVIEWER_PASSWORD` from the local Git-ignored `.env`. It is also a production Secret; never publish it. Use **Team access** to create one-time invitations for named users. Recipients choose **Join with invitation**, set their own password, then sign in with **My named account**. Invitations expire in 24 hours; revocation terminates existing sessions.
+
 ## Run locally
 
 Requirements: Node.js 22+ and Python 3.12+. From the repository directory:
@@ -49,6 +53,7 @@ For Groq, set `LLM_PROVIDER=groq` and `GROQ_API_KEY` locally. The default model 
 | --- | --- |
 | `BATON_DEMO` | Explicit `1` enables public synthetic demo credentials. Defaults to off. |
 | `BATON_DB` | SQLite file path; default `data/baton.sqlite3`. |
+| `DATABASE_URL` | Restricted Supabase Postgres connection. Hosted Baton uses its IPv4 transaction pooler with RLS; SQLite remains a local fallback. Backend-only secret. |
 | `BATON_REVIEWER_PASSWORD` | Unique reviewer password for hosted use. |
 | `BATON_SUCCESSOR_PASSWORD` | Unique technical successor password. |
 | `BATON_COORDINATOR_PASSWORD` | Unique coordinator password. |
@@ -62,7 +67,9 @@ For Groq, set `LLM_PROVIDER=groq` and `GROQ_API_KEY` locally. The default model 
 | `GEMINI_API_KEY` | Optional Google model credential, backend only. |
 | `GEMINI_MODEL` | Configurable model ID; default `gemini-2.5-flash`. Check availability with your provider. |
 
-Never enable demo credentials for confidential data. Configure all four account passwords, disable `BATON_DEMO`, serve behind HTTPS, set secure cookies and use a persistent disk. The prototype is one workspace with four fixed role accounts; it is not multi-tenant enterprise authentication.
+Never enable demo credentials for confidential data. Production uses `BATON_DEMO=0`, a unique reviewer password, HTTPS and secure cookies. Other users join through reviewer-issued invitations. Named memberships have four permission roles in one workspace. Authentication is application-managed; Supabase Auth, SSO, password recovery and organisation-wide multi-tenancy remain future work.
+
+In **Handover**, create actions linked to approved evidence, set owners/deadlines, and schedule Day 1/Week 1/Day 30 work. Assigned owners can update status; reassignment requires the reviewer. Changes invalidate receipts. **Ask the leaver** adds priority, due dates and reviewer/departing-member routing with sudden-exit fallback. Version diffs cover owner/status/type/attestation as well as text; historical receipts use their original version.
 
 ## Validation
 
@@ -72,6 +79,8 @@ npm run build
 ```
 
 The API tests use isolated temporary databases and remove real model credentials from their environment. They cover the complete journey, approval gating, forged citations, paraphrase uncertainty, invalid input, redaction, role restrictions, version immutability, permission revocation, evidence/search/export leakage, sudden exit, structured Groq requests, bounded retries, error sanitisation and explicit cloud fallback. Model tests use mocked HTTP responses, not paid calls.
+
+With `DATABASE_URL` configured, `python scripts/check_rls.py` runs rollback-only canary tests under the restricted runtime role. `python scripts/verify_supabase.py` imports/reconstructs only the known synthetic fixture and checks API visibility; it refuses to modify a workspace containing other source hashes.
 
 ## Submission material
 

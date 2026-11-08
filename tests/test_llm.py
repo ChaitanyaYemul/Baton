@@ -26,6 +26,7 @@ def test_groq_success_has_strict_schema_and_verifies_quote(groq,monkeypatch):
         assert kwargs['headers']['Authorization']=='Bearer gsk_synthetic_test_key_not_real'
         body=kwargs['json']
         assert body['model']=='openai/gpt-oss-20b'
+        assert body['reasoning_effort']=='low'
         assert body['response_format']['json_schema']['strict'] is True
         assert 'gsk_' not in json.dumps(body)
         schema=body['response_format']['json_schema']['schema']

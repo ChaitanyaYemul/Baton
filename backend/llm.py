@@ -30,7 +30,7 @@ def configuration():
 
 def cache_identity():
     # No credentials or credential hashes in the persisted extraction cache.
-    return json.dumps({'pipeline': 2, **configuration()}, sort_keys=True)
+    return json.dumps({'pipeline': 3, **configuration()}, sort_keys=True)
 
 def strict_schema(schema):
     result = copy.deepcopy(schema)
@@ -72,6 +72,10 @@ def request_json(provider, sources, schema):
                    {'role': 'user', 'content': data}], 'max_completion_tokens': 8192,
                    'response_format': {'type': 'json_schema', 'json_schema': {
                        'name': 'handover_extraction', 'strict': True, 'schema': strict_schema(schema)}}}
+        # This is bounded extraction, not an open-ended reasoning task. GPT-OSS's
+        # default medium effort can consume the output budget before completing JSON.
+        if model.startswith('openai/gpt-oss-'):
+            payload['reasoning_effort']='low'
     else:
         url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
         headers = {'x-goog-api-key': key}

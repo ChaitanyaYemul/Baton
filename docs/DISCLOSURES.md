@@ -13,6 +13,7 @@ No starter application, commercial template, copied handover implementation, rea
 | Pydantic | Schema validation | MIT |
 | HTTPX | GitHub/Groq/Gemini HTTP calls | BSD-3-Clause |
 | python-dotenv | Backend-only local environment loading | BSD-3-Clause |
+| Psycopg / psycopg-binary | Restricted Postgres connections and JSONB adaptation | LGPL-3.0; bundled binary components retain their upstream licences |
 | pytest | Automated API tests | MIT |
 | ReportLab | Runtime PDF export | BSD-style; review installed package license |
 | Python SQLite / crypto standard library | Persistence / password and session handling | Python standard-library terms; SQLite public domain |
@@ -20,6 +21,8 @@ No starter application, commercial template, copied handover implementation, rea
 | Google Gemini API | Optional JSON extraction | Provider terms; requires user's backend key; not needed in offline mode |
 | Groq API | Optional strict JSON extraction | Provider terms; requires user's backend key; no Groq SDK dependency |
 | GitHub REST API | Public README + recent commits | GitHub API terms; unauthenticated rate limits apply |
+| Supabase Postgres | Persistent data and database-enforced RLS | Supabase terms; database credentials remain backend-only |
+| Vercel | Vite CDN and Python/FastAPI hosting | Vercel terms; production Secrets remain backend-only |
 | Docker official Node/Python images | Optional packaging | Upstream image and included component licences |
 
 Refer to lockfiles and installed dependency licence files for exact resolved versions and transitive dependencies. No runtime AI calls are made when offline mode is selected or no selected provider key exists. A configured provider sends redacted imported text to Groq or Google according to backend configuration; a second cloud fallback requires explicit opt-in. Regex redaction cannot certify complete anonymisation.

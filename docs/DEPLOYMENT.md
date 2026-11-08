@@ -1,23 +1,33 @@
-# Deployment and judge access
+# Deployment and private judge access
 
-## Verified local installation path
+Production: **a-7c4f/baton** at **https://baton-ruddy.vercel.app**. Vercel serves Vite assets and routes `/api/*` to the Python ASGI entrypoint `api/index.py`, pinned to Mumbai (`bom1`) near the database. Supabase Postgres provides persistent storage through its IPv4 transaction pooler. `/api/health` checks database connectivity and returns 503 when unavailable.
 
-`npm ci && npm run build`, then install `requirements.txt` in Python 3.12+ and start one Uvicorn worker. The FastAPI process serves `dist/` plus `/api`. Local demo mode binds to `127.0.0.1:8000`. `GET /api/health` is a readiness endpoint. Docker Compose provides the same installable experience, with persistent data and localhost binding.
+## Access and secrets
 
-## Cloud deployment checklist
+The participant chose private accounts. `BATON_DEMO=0` disables shared demonstration sign-in, including previously seeded demo password hashes. The initial reviewer password is generated in local `.env` as `BATON_REVIEWER_PASSWORD` and uploaded as a production Secret. It is never committed, put in a URL, or printed in tool output. The owner signs in as Kabir / Reviewer, then can create named invitations in **Team access**. Sharing invitations with judges is left to the participant; no email or message is sent automatically.
 
-The application is designed for a Docker-capable service with a persistent disk, such as the API host proposed in Round 1. There is no active deployed URL in this document until a deployment has actually succeeded.
+Invitations are unguessable, hashed at rest, valid for 24 hours and usable once. Recipients choose passwords of at least 12 characters. A role is assigned by the reviewer and cannot be changed through login parameters. Revocation disables the account and deletes sessions; current account state is checked on every request.
 
-1. Build the repository Dockerfile on the selected host.
-2. Attach a persistent disk at `/app/data`; run one replica and one Uvicorn worker. SQLite is not suitable for independent ephemeral replicas.
-3. Expose container port 8000 through the host's HTTPS reverse proxy. Set `BATON_SECURE_COOKIE=1`.
-4. For a public **synthetic-only** judge demo, explicitly set `BATON_DEMO=1` and clearly disclose the shared demonstration accounts. All demo users can alter the shared reviewer workspace; do not add confidential information.
-5. For permissioned data, set `BATON_DEMO=0`, configure distinct `BATON_*_PASSWORD` values and share credentials only with the intended judge. Do not put secrets in a README, URL, frontend bundle or git commit.
-6. Set `LLM_PROVIDER=groq`, `GROQ_API_KEY` and an available strict-output `GROQ_MODEL` (default `openai/gpt-oss-20b`). Gemini remains optional. Default `LLM_FALLBACK_PROVIDER=offline` avoids silently sending data to another cloud. Validate the provider with `scripts/check_llm.py` and review the mode label; an offline fallback is not a successful live model check. Backend secrets may be configured in the host environment or a local Git-ignored `.env` and require a restart.
-7. Run the README walkthrough against the deployed origin. Verify cookie security, login, reconnect persistence, import error handling, role restrictions, receipt inspection and PDF/Markdown downloads.
+The production Secrets are `DATABASE_URL`, `GROQ_API_KEY` and `BATON_REVIEWER_PASSWORD`. Config variables select Groq, model, timeout, offline fallback, disabled shared demos and secure cookies. `scripts/configure_vercel.py` validates the linked team/project and uploads an explicit allowlist via stdin. `--only DATABASE_URL` changes only that Secret. It never places secret values in shell arguments.
 
-Separate frontend hosting (for example Vercel) would require an authenticated same-origin `/api` reverse proxy and matching cookie settings. It is deliberately not configured as a static-only deployment: a static page cannot replace the Python evidence and access-control backend.
+The database login is `baton_runtime`, confined to the separate Baton project. It has no superuser, database/role-creation or RLS-bypass privileges. Enabling this credential and uploading the production payload were explicitly approved by the participant. Direct IPv6 connectivity worked locally but not from Vercel; the participant supplied the project's transaction-pooler hostname. Prepared statements are disabled for pooler compatibility.
 
-## Known limitations
+## Releases
 
-One workspace/four role accounts; no invitations, password recovery, Supabase RLS or SSO. Regex PII detection has gaps. Imports and extraction are bounded and synchronous. Generic chat normalization, simple lexical categories and explicit conflict tuples in offline mode have limited recall. Ownership is a signal rather than an authorship model. Plan groups suggest confirmation steps rather than inferring new organisational facts. Downloads cannot be recalled. The database/activity log is not tamper proof against server administrators. Public GitHub/Gemini availability and free-tier limits may change. Docker and hosted model/network journeys require verification on the actual target environment.
+The local `.vercel/project.json` links the intended project and is Git-ignored. After build/tests, deploy with the explicit scope:
+
+```sh
+vercel deploy --prod --scope team_NgKr6jpZj9NVdACMjyWeqX3X --yes
+```
+
+The connector's scope error persisted after its consent flow. The participant completed the official CLI device login, allowing a correctly scoped deployment. No unscoped project was created. Git auto-deployment is not assumed connected until verified.
+
+Python 3.12 and a flat pinned `requirements.txt` support reproducible cloud installs. The same versions are recorded in `requirements.lock.txt`. A nested requirements include failed in Vercel's parser and was replaced by a flat file. `.env`, `.env.local`, `.vercel`, local data and test artifacts are excluded from uploads. Vercel startup refuses to use ephemeral SQLite if `DATABASE_URL` is missing.
+
+The three SQL migrations describe normalized data, invitations and consolidated RLS policies. The first two local filenames match Supabase's applied journal versions. After an MCP migration error, the policy-hardening SQL was applied in a transaction, verified through `pg_policies`, and recorded in migration history. Runtime credentials are separate from migration files.
+
+## Local fallback and limits
+
+README contains the local Uvicorn installation. Without `DATABASE_URL`, SQLite persists in `data/` and requires one worker. Docker Compose remains a localhost synthetic-demo fallback with a named volume; Docker runtime has not been tested here.
+
+The product has one workspace and app-managed sessions, not Supabase Auth, SSO, password recovery or organisation-wide multi-tenancy. Redaction is heuristic. Import/extraction is synchronous and bounded. Chat normalization and offline conflict rules are limited. Ownership is a signal rather than a validated authorship score. Downloads cannot be revoked. Database administrators retain administrative access. Gemini validation was explicitly skipped; Groq remains the selected provider. No interview feedback, onboarding-time reduction or model accuracy benchmark is invented.

@@ -20,16 +20,16 @@ The supplied Round 1 plan is a product proposal. The organiser brief is the requ
 | F6 Conflicts and staleness | Structured subject/predicate/value conflicts; both sides shown; 60-day age indicator | Offline conflict tuples use `[subject|predicate|value]`; arbitrary prose contradictions require review or model extraction. |
 | F7 Timeline | Dated claims with evidence access | Missing dates fall back to import date. |
 | F8 Ownership | Explicit owner map; departing-member concentration signal | Not a calculated degree-of-authorship or validated bus-factor metric. |
-| F9 Review | Per-card approve/reject/edit/attest, bulk supported approval, explicit publication, immutable numbered snapshots, activity log | Single workspace; local DB admins can alter records. Audit is application append-only, not tamper-proof storage. |
-| F10 Roles | Reviewer, technical successor, coordinator, departing member; server sessions and current source labels | Fixed accounts; no invitation flow or Supabase Auth/RLS yet. |
-| F11 Early foundation | Gap questions, named answers, planned/sudden exit routing | Reviewer workflow rather than external question delivery. |
-| F12 Early foundation | All-evidence visibility, neutral restricted stubs, server API leak tests | Browser cannot revoke downloaded copies; no enterprise policy framework. |
-| F13 Early foundation | Risk-first Day 1/Week 1/Day 30 groups, section receipt, version diff, Markdown/PDF | Plan is a deterministic grouping of claims with a suggested confirmation step, not a model-generated schedule. Diff tracks added/changed and removed count, not a rich field-level comparison. |
+| F9 Review | Per-card review, bulk supported approval, explicit publication, numbered snapshots, audit log; database-level published-row immutability and append-only audit grants | Single workspace; database administrators retain administrative access. |
+| F10 Roles | Four permission roles plus named accounts, 24-hour single-use invitations, per-request active-membership checks and immediate session revocation | App-managed authentication; Supabase Auth, SSO and recovery are not implemented. |
+| F11 Questionnaire | Gap questions, named answers, priority/due dates, reviewer/leaver assignment and sudden-exit fallback | Routing is inside the workspace; no external email/chat delivery. Feedback from real users remains outstanding. |
+| F12 Visibility | All-evidence intersection in Python and Supabase RLS, content-free stubs, API leak tests and rollback-only live database canaries | One workspace. Backend supplies trusted context after session validation. Downloads cannot be revoked. |
+| F13 Continuation | Risk-first context plus editable owned actions, deadlines/status, section receipts, stale-receipt notices, field-level version diff, historical receipts and permission-filtered Markdown/PDF | Suggestions are deterministic; editable actions are authored by humans. No automatic organisational fact generation or scheduled reminders. |
 | F14 Stretch foundation | Keyword retrieval from authorised approved claims, with receipts and explicit no-answer | Extractive evidence search, not conversational generative Q&A. |
 
 ## Changes from Round 1
 
-React/Vite and FastAPI/Pydantic are retained. Plain CSS replaces planned Tailwind. SQLite replaces Supabase for a zero-account runnable installation; server-side authorization is mandatory, but the planned database RLS second lock is still pending. The participant selected Groq as the preferred cloud provider after reporting Gemini errors/latency. Both adapters are implemented with an offline fallback; a second cloud provider requires explicit configuration. GitHub REST import is deliberately bounded. Early foundations for F11–F13 were implemented without claiming the later-round hardening is complete.
+React/Vite and FastAPI/Pydantic are retained; plain CSS replaces Tailwind. SQLite remains the account-free local fallback, while the hosted version now uses normalized Supabase Postgres tables and forced RLS through a restricted runtime role. Named memberships and invitations extend the original fixed-persona demo. The participant selected Groq and explicitly chose to skip live Gemini validation. Both adapters remain implemented, with offline fallback by default. Vercel now hosts the frontend and Python API together through same-origin rewrites; the database uses its transaction pooler. GitHub import remains bounded. Core engineering parts of F11–F13 were brought forward; real-user feedback and wider hardening are still required.
 
 ## Three substantial Round 3 commitments
 
@@ -39,4 +39,6 @@ React/Vite and FastAPI/Pydantic are retained. Plain CSS replaces planned Tailwin
 
 ## Submission readiness
 
-The repository includes source, local installation, Docker packaging, architecture, disclosures and automated tests. See `docs/TESTING.md` for observed results. Hosting and live Gemini integration must be verified in the chosen environment. No interview feedback or demo video has been invented. Record a short walkthrough using the README journey and attach it if the organiser requests one. Confirm official deadlines and build-window eligibility before submission.
+The repository includes the source, local installation, Docker packaging, architecture, disclosures, migrations and automated tests. The production address is https://baton-ruddy.vercel.app with private project accounts. See `docs/TESTING.md` for observed hosted checks and remaining limitations. Gemini testing was skipped by explicit participant choice. No interview feedback or demo video has been invented. The participant must still record the requested walkthrough, arrange judge account access and confirm official deadlines/build-window eligibility.
+
+The three Round 3 commitments above are retained as the original submitted promises. Their core features are now present; the remaining work is acceptance evidence, broader inputs and real-user feedback, rather than representing unperformed interviews or benchmarks as completed work.
