@@ -1,0 +1,15 @@
+services:
+  baton:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      BATON_DEMO: "1"
+      BATON_SECURE_COOKIE: "0"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+    volumes:
+      - baton-data:/app/data
+    restart: unless-stopped
+volumes:
+  baton-data:
