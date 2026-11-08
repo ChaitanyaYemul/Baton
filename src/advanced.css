@@ -19,12 +19,12 @@
 .advanced-help {
   font-size: 11px;
   line-height: 1.8;
-  color: #839177;
+  color: var(--muted);
   margin-bottom: 20px;
 }
 .advanced-form {
   padding: 22px;
-  background: #fffefa;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
   margin-bottom: 22px;
@@ -52,11 +52,11 @@
 .question-row p {
   font-size: 10px;
   line-height: 1.8;
-  color: #87967b;
+  color: var(--muted);
   margin-bottom: 12px;
 }
 .action-done h3 {
-  color: #73866a;
+  color: var(--muted);
 }
 .action-buttons {
   display: flex;
@@ -73,7 +73,7 @@
   font-size: 11px;
 }
 .question-row {
-  background: #fffefa;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 23px;
@@ -87,20 +87,20 @@
   padding-left: 25px;
 }
 .version-change {
-  background: #edf2e6;
+  background: var(--surface);
   padding: 14px 18px;
   border-radius: 0 0 6px 6px;
   font-size: 10px;
   line-height: 1.9;
-  color: #708060;
+  color: var(--muted);
 }
 .version-change p {
   overflow-wrap: anywhere;
 }
 .invite-code {
   padding: 15px;
-  background: #eaf0e0;
-  border: 1px solid #d5e0c7;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 6px;
   margin: 15px 0;
   word-break: break-all;
@@ -110,7 +110,7 @@
 .member-list {
   border: 1px solid var(--border);
   border-radius: 7px;
-  background: #fffefa;
+  background: var(--surface);
 }
 .member-row {
   display: flex;
@@ -125,7 +125,7 @@
 }
 .member-row small {
   display: block;
-  color: #8b987e;
+  color: var(--muted);
   margin-top: 6px;
 }
 .member-row button {
@@ -144,7 +144,7 @@
   max-width: 460px;
   margin: 50px auto;
   padding: 35px;
-  background: #fffefa;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
 }
@@ -154,7 +154,7 @@
 }
 .join-form p {
   font-size: 11px;
-  color: #87967b;
+  color: var(--muted);
   line-height: 1.8;
   margin-bottom: 25px;
 }

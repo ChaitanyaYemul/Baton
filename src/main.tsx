@@ -34,6 +34,7 @@ import {
   type Action,
   type Assignment,
 } from "./Advanced";
+import "./theme.css";
 
 type Evidence = {
   source_id: string;
@@ -519,6 +520,9 @@ function App() {
               <button
                 key={item.id}
                 className={page === item.id ? "nav-item active" : "nav-item"}
+                aria-label={item.label}
+                aria-current={page === item.id ? "page" : undefined}
+                title={item.label}
                 onClick={() => {
                   setPage(item.id);
                   setQuery("");
