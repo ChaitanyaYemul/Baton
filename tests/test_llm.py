@@ -121,4 +121,3 @@ def test_cache_identity_tracks_provider_model_but_never_keys(groq,monkeypatch):
     assert cache_identity()!=original
     assert 'a_different_secret' not in cache_identity()
     assert redact('key is gsk_abcdefghijklmnop1234567890')[0]=='key is [REDACTED]'
-
