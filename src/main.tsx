@@ -371,8 +371,7 @@ function App() {
       <main className="login-page">
         <div className="login-story">
           <div className="brand">
-            <span className="brand-mark">b</span>baton
-            <span className="brand-dot">.</span>
+            <span className="logo-symbol"><img src="/assets/images/baton-logo.png" alt="" /></span>baton
           </div>
           <span className="eyebrow">Knowledge moves forward</span>
           <h1>
@@ -499,12 +498,11 @@ function App() {
     );
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <header className="workspace-header">
         <a className="brand" href="#" onClick={() => setPage("overview")}>
-          <span className="brand-mark">b</span>baton
-          <span className="brand-dot">.</span>
+          <span className="logo-symbol"><img src="/assets/images/baton-logo.png" alt="" /></span>baton
         </a>
-        <div className="workspace-label">WORKSPACE</div>
+
         <div className="project-picker">
           <span className="project-icon">F</span>
           <span>
@@ -512,8 +510,8 @@ function App() {
           </span>
           <ChevronRight size={15} />
         </div>
-        <div className="workspace-label">YOUR WORKSPACE</div>
-        <nav>
+
+        <nav className="workspace-nav" aria-label="Workspace navigation">
           {nav
             .filter((item) => item.id !== "people" || reviewer)
             .map((item) => (
@@ -538,15 +536,6 @@ function App() {
               </button>
             ))}
         </nav>
-        <div className="sidebar-note">
-          <ShieldCheck size={23} />
-          <strong>Receipts, not guesswork.</strong>
-          <p>
-            Every claim has a source.
-            <br />
-            Every handover has a human.
-          </p>
-        </div>
         <div className="user-block">
           <span className="avatar">{ws.user.name[0]}</span>
           <span>
@@ -566,7 +555,7 @@ function App() {
             <LogOut size={16} />
           </button>
         </div>
-      </aside>
+      </header>
       <div className="main-shell">
         <header className="topbar">
           <div className="breadcrumb">
@@ -591,7 +580,7 @@ function App() {
               </span>
               <h1>
                 {page === "overview"
-                  ? "A clear path to what’s next."
+                  ? "The work continues."
                   : nav.find((n) => n.id === page)?.label}
               </h1>
               <p>
@@ -651,9 +640,9 @@ function App() {
                     A HANDOVER THAT SHOWS ITS RECEIPTS
                   </span>
                   <h2>
-                    Good context.
+                    People move on.
                     <br />
-                    Confident next steps.
+                    Context stays.
                   </h2>
                   <p>
                     Aarav is passing the baton to Meera.
@@ -668,20 +657,10 @@ function App() {
                     <ArrowUpRight size={16} />
                   </button>
                 </div>
-                <div className="baton-visual" aria-hidden="true">
-                  <div className="orbit-ring one" />
-                  <div className="orbit-ring two" />
-                  <div className="baton-stick" />
-                  <div className="visual-tag top">
-                    <Check size={15} /> Evidence attached
-                  </div>
-                  <div className="visual-tag bottom">
-                    <ShieldCheck size={15} /> Human in control
-                  </div>
-                  <span className="visual-caption">
-                    PASS THE CONTEXT FORWARD ↗
-                  </span>
-                </div>
+                <figure className="hero-image">
+                  <img src="/assets/images/architecture.jpg" alt="Monochrome concrete stairs rising through an angular architectural space" fetchPriority="high" />
+                  <figcaption>Context is the next step. <a href="https://unsplash.com/photos/b5YlVPjRH3A" target="_blank" rel="noreferrer">Photo: Mauro Lima</a></figcaption>
+                </figure>
               </section>
               <div className="stats">
                 <div>
