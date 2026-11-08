@@ -4,9 +4,9 @@
 
 Baton turns authorised notes, task exports, git history and conversations into an evidence-linked claim ledger. A reviewer resolves uncertainty and publishes a numbered snapshot. Successors receive approved knowledge filtered by their access to **all** its underlying evidence.
 
-Production address: **https://baton-ruddy.vercel.app**. The site is publicly reachable; project data requires a private account. Shared demo passwords are disabled in production. See [deployment details](docs/DEPLOYMENT.md) and [observed testing](docs/TESTING.md).
+Production address: **https://baton-ruddy.vercel.app**. The participant has intentionally made the shared **Kabir / Reviewer** password visible beside the sign-in field for hackathon judges. Anyone visiting the site can use this reviewer account, including its editing and team-management permissions. Use synthetic or public demonstration data only. The older seeded demo passwords remain disabled in production. See [deployment details](docs/DEPLOYMENT.md) and [observed testing](docs/TESTING.md) for the earlier private-account setup and validation history.
 
-The owner can sign in as **Kabir / Reviewer** using `BATON_REVIEWER_PASSWORD` from the local Git-ignored `.env`. It is also a production Secret; never publish it. Use **Team access** to create one-time invitations for named users. Recipients choose **Join with invitation**, set their own password, then sign in with **My named account**. Invitations expire in 24 hours; revocation terminates existing sessions.
+Judges can select **Kabir / Reviewer** and use the password displayed on the sign-in page. The credential is intentionally public; this hosted workspace must not hold confidential data. Use **More tools → Team access** to create one-time invitations for named users. Recipients choose **Join with invitation**, set their own password, then sign in with **My named account**. Invitations expire in 24 hours; revocation terminates existing sessions. Model keys and database credentials remain backend-only and must never be published.
 
 ## Run locally
 

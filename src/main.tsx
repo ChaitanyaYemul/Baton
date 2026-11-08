@@ -461,6 +461,17 @@ function App() {
                 autoComplete="current-password"
               />
             </label>
+            {role === "reviewer" && !authConfig.demo && (
+              <div className="judge-access">
+                <strong>Judge demo access</strong>
+                <p>Select Kabir · Reviewer and use this password:</p>
+                <code>ELpYYLY6Icxe9X9STOT8lBvyLbYZ9Lqq0nTm1Fcs</code>
+                <small>
+                  This is a public, shared reviewer account. Use synthetic or
+                  public demonstration data only.
+                </small>
+              </div>
+            )}
             {error && (
               <div className="error" role="alert">
                 {error}
@@ -485,7 +496,7 @@ function App() {
             <strong>
               {authConfig.demo
                 ? "Synthetic demonstration accounts"
-                : "Private project access"}
+                : "Judge and team access"}
             </strong>
             {authConfig.demo ? (
               <p>
@@ -494,8 +505,8 @@ function App() {
               </p>
             ) : (
               <p>
-                Use your private reviewer credentials or a named account. New
-                team members need an invitation from the reviewer.
+                Judges can use the reviewer access shown above. Team members
+                with an invitation can create and use their own named account.
               </p>
             )}
           </div>

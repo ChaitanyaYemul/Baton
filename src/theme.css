@@ -342,6 +342,11 @@ input, select, textarea, .login-form input, .login-form select { font-size: 16px
 .login-form > .badge { display: none; }
 .login-form h2 { font-size: 32px; }
 .demo-note { margin-top: 24px; }
+.judge-access { margin: 0 0 22px; padding: 16px; border: 1px solid #555; border-radius: 6px; background: #111; }
+.judge-access strong { display: block; font-size: 16px; }
+.judge-access p { margin: 8px 0; font-size: 14px; line-height: 1.6; color: #ccc; }
+.judge-access code { display: block; padding: 11px; background: #000; border: 1px solid #333; border-radius: 3px; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; user-select: all; }
+.judge-access small { display: block; margin-top: 10px; font-size: 13px; line-height: 1.6; color: #bbb; }
 @media (max-width: 800px) {
   .workspace-header { padding-left: 24px; padding-right: 24px; }
   .workspace-nav { gap: 18px; flex-wrap: wrap; }
