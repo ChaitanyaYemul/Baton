@@ -15,7 +15,7 @@ The supplied Round 1 plan is a product proposal. The organiser brief is the requ
 | F1 Source import | MD/TXT paste/upload; CSV and JSON task exports; TXT/JSON chat exports; public GitHub latest 30 commits + README | No OAuth/private repository import, full clone, PRs/issues or nested documentation crawl. Chat is preserved as text/rows rather than a complete platform-specific parser. |
 | F2 Locators | Source IDs, SHA-256 hashes, line locators, quote receipts; commit SHA/author/time retained in git export text | Multi-line quotes use a labelled normalized-text locator. No token-based overlapping chunk pipeline yet. |
 | F3 Redaction | Backend regex masking before persistence and model calls; reviewer sees match count | Conservative heuristic, not a guarantee against every secret or PII format; no entropy scanner yet. |
-| F4 Typed extraction | Seven claim categories; Pydantic validation; optional Gemini; deterministic extractive fallback; content-hash cache | Offline rules are intentionally shallow. No Groq fallback yet. Source text is untrusted. |
+| F4 Typed extraction | Seven claim categories; Pydantic validation; Groq strict JSON or Gemini; explicit cloud/offline fallback; content-hash cache; bounded retries | Offline rules are intentionally shallow. Live provider quality/latency still needs measurement. Source text is untrusted. |
 | F5 Quote verifier | Normalised substring check against cited source; unknown source rejected; paraphrases remain inferred | Quote existence establishes attribution, not truth or entailment. |
 | F6 Conflicts and staleness | Structured subject/predicate/value conflicts; both sides shown; 60-day age indicator | Offline conflict tuples use `[subject|predicate|value]`; arbitrary prose contradictions require review or model extraction. |
 | F7 Timeline | Dated claims with evidence access | Missing dates fall back to import date. |
@@ -29,7 +29,7 @@ The supplied Round 1 plan is a product proposal. The organiser brief is the requ
 
 ## Changes from Round 1
 
-React/Vite and FastAPI/Pydantic are retained. Plain CSS replaces planned Tailwind. SQLite replaces Supabase for a zero-account runnable installation; server-side authorization is mandatory, but the planned database RLS second lock is still pending. Gemini is optional, with offline extraction in place of Groq during outages. GitHub REST import is deliberately bounded. Early foundations for F11–F13 were implemented without claiming the later-round hardening is complete.
+React/Vite and FastAPI/Pydantic are retained. Plain CSS replaces planned Tailwind. SQLite replaces Supabase for a zero-account runnable installation; server-side authorization is mandatory, but the planned database RLS second lock is still pending. The participant selected Groq as the preferred cloud provider after reporting Gemini errors/latency. Both adapters are implemented with an offline fallback; a second cloud provider requires explicit configuration. GitHub REST import is deliberately bounded. Early foundations for F11–F13 were implemented without claiming the later-round hardening is complete.
 
 ## Three substantial Round 3 commitments
 

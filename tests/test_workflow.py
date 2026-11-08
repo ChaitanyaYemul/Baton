@@ -162,3 +162,16 @@ def test_authentication_and_request_protection(clients):
     del c.headers['X-Baton-Request']
     assert c.post('/api/demo').status_code==403
     assert anonymous.post('/api/login',json={'role':'reviewer','password':'wrong'}).status_code==401
+
+def test_api_retries_fallback_results_but_caches_success(clients,monkeypatch):
+    c=clients['reviewer']
+    assert c.post('/api/demo').status_code==200
+    calls=[]
+    def reconstruct(sources):
+        calls.append(1)
+        return [],'offline fallback · Groq rate limited' if len(calls)==1 else 'Groq · openai/gpt-oss-20b'
+    monkeypatch.setattr(main,'reconstruct',reconstruct)
+    assert c.post('/api/reconstruct').status_code==200
+    assert c.post('/api/reconstruct').status_code==200
+    assert c.post('/api/reconstruct').status_code==200
+    assert len(calls)==2

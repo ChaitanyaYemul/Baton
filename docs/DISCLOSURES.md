@@ -11,15 +11,19 @@ No starter application, commercial template, copied handover implementation, rea
 | Lucide React | Icons | ISC |
 | FastAPI / Starlette / Uvicorn | HTTP server | MIT / BSD-3-Clause / BSD-3-Clause |
 | Pydantic | Schema validation | MIT |
-| HTTPX | GitHub/Gemini HTTP calls | BSD-3-Clause |
+| HTTPX | GitHub/Groq/Gemini HTTP calls | BSD-3-Clause |
+| python-dotenv | Backend-only local environment loading | BSD-3-Clause |
 | pytest | Automated API tests | MIT |
 | ReportLab | Runtime PDF export | BSD-style; review installed package license |
 | Python SQLite / crypto standard library | Persistence / password and session handling | Python standard-library terms; SQLite public domain |
 | Google Fonts DM Sans and Manrope | Optional remote typography | SIL Open Font License; local system fallbacks work offline |
 | Google Gemini API | Optional JSON extraction | Provider terms; requires user's backend key; not needed in offline mode |
+| Groq API | Optional strict JSON extraction | Provider terms; requires user's backend key; no Groq SDK dependency |
 | GitHub REST API | Public README + recent commits | GitHub API terms; unauthenticated rate limits apply |
 | Docker official Node/Python images | Optional packaging | Upstream image and included component licences |
 
-Refer to lockfiles and installed dependency licence files for exact resolved versions and transitive dependencies. No runtime AI calls are made when `GEMINI_API_KEY` is absent. A configured key sends redacted imported text to Google; regex redaction cannot certify complete anonymisation.
+Refer to lockfiles and installed dependency licence files for exact resolved versions and transitive dependencies. No runtime AI calls are made when offline mode is selected or no selected provider key exists. A configured provider sends redacted imported text to Groq or Google according to backend configuration; a second cloud fallback requires explicit opt-in. Regex redaction cannot certify complete anonymisation.
+
+Groq integration references: [API compatibility](https://console.groq.com/docs/openai), [structured outputs](https://console.groq.com/docs/structured-outputs), [error handling](https://console.groq.com/docs/errors). Mocked integration tests establish request/response behaviour; live speed and extraction quality require validation with an actual key.
 
 Official technical references consulted: [Gemini generateContent](https://ai.google.dev/api/generate-content), [GitHub repository API](https://docs.github.com/en/rest/repos/repos), [GitHub contents API](https://docs.github.com/en/rest/repos/contents). Product requirements come from the two PDFs supplied by the participant; no external numerical impact claims are reused as measured results.

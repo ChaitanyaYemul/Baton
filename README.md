@@ -41,7 +41,9 @@ For frontend development, run the API and `npm run dev` in separate terminals. V
 
 ## Configuration
 
-See `.env.example`. The application reads process environment variables; it does **not** automatically load `.env` when started directly. Docker Compose reads `.env` for Gemini settings.
+Copy `.env.example` to `.env` and set your backend key there. `.env` is ignored by Git and excluded from Docker images. The backend loads it on startup; host-provided environment variables take precedence. Restart after changing configuration. Docker Compose passes the model settings to the container.
+
+For Groq, set `LLM_PROVIDER=groq` and `GROQ_API_KEY` locally. The default model is `openai/gpt-oss-20b`, using strict structured output. Check the connection with `.venv\Scripts\python scripts/check_llm.py`; this sends one synthetic example and prints only the provider result and validated claim count. A successful result starts with `Groq`; offline fallback is not a live validation success. Never paste keys into the frontend or commit them.
 
 | Variable | Purpose |
 | --- | --- |
@@ -52,6 +54,11 @@ See `.env.example`. The application reads process environment variables; it does
 | `BATON_COORDINATOR_PASSWORD` | Unique coordinator password. |
 | `BATON_LEAVER_PASSWORD` | Unique departing-member password. |
 | `BATON_SECURE_COOKIE` | Set `1` behind HTTPS. |
+| `LLM_PROVIDER` | `groq`, `gemini`, `offline`, or `auto` (default: prefer configured Groq, then Gemini, otherwise offline). |
+| `GROQ_API_KEY` | Backend-only Groq credential. |
+| `GROQ_MODEL` | Default `openai/gpt-oss-20b`; choose a Groq model supporting strict structured output. |
+| `LLM_TIMEOUT_SECONDS` | Read/write timeout per attempt, default 15 seconds; clamped to 5–30. Connect timeout is 5 seconds. |
+| `LLM_FALLBACK_PROVIDER` | Default `offline`. Set `gemini` explicitly to opt in to sending redacted text to Google after a Groq failure. |
 | `GEMINI_API_KEY` | Optional Google model credential, backend only. |
 | `GEMINI_MODEL` | Configurable model ID; default `gemini-2.5-flash`. Check availability with your provider. |
 
@@ -64,7 +71,7 @@ npm run build
 .venv\Scripts\python -m pytest -q
 ```
 
-The API tests use isolated temporary databases. They cover the complete journey, approval gating, forged citations, paraphrase uncertainty, invalid input, redaction, role restrictions, version immutability, permission revocation, evidence/search/export leakage and sudden exit.
+The API tests use isolated temporary databases and remove real model credentials from their environment. They cover the complete journey, approval gating, forged citations, paraphrase uncertainty, invalid input, redaction, role restrictions, version immutability, permission revocation, evidence/search/export leakage, sudden exit, structured Groq requests, bounded retries, error sanitisation and explicit cloud fallback. Model tests use mocked HTTP responses, not paid calls.
 
 ## Submission material
 

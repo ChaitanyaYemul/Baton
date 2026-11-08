@@ -13,7 +13,7 @@ The application is designed for a Docker-capable service with a persistent disk,
 3. Expose container port 8000 through the host's HTTPS reverse proxy. Set `BATON_SECURE_COOKIE=1`.
 4. For a public **synthetic-only** judge demo, explicitly set `BATON_DEMO=1` and clearly disclose the shared demonstration accounts. All demo users can alter the shared reviewer workspace; do not add confidential information.
 5. For permissioned data, set `BATON_DEMO=0`, configure distinct `BATON_*_PASSWORD` values and share credentials only with the intended judge. Do not put secrets in a README, URL, frontend bundle or git commit.
-6. Optionally set `GEMINI_API_KEY` and a currently available `GEMINI_MODEL`. Validate provider output and review the mode label; offline fallback is deliberate.
+6. Set `LLM_PROVIDER=groq`, `GROQ_API_KEY` and an available strict-output `GROQ_MODEL` (default `openai/gpt-oss-20b`). Gemini remains optional. Default `LLM_FALLBACK_PROVIDER=offline` avoids silently sending data to another cloud. Validate the provider with `scripts/check_llm.py` and review the mode label; an offline fallback is not a successful live model check. Backend secrets may be configured in the host environment or a local Git-ignored `.env` and require a restart.
 7. Run the README walkthrough against the deployed origin. Verify cookie security, login, reconnect persistence, import error handling, role restrictions, receipt inspection and PDF/Markdown downloads.
 
 Separate frontend hosting (for example Vercel) would require an authenticated same-origin `/api` reverse proxy and matching cookie settings. It is deliberately not configured as a static-only deployment: a static page cannot replace the Python evidence and access-control backend.

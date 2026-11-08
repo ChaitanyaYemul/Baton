@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from backend.engine import DEMO, KINDS, now, parse_source, reconstruct, redact
+from backend.llm import cache_identity
 
 app = FastAPI(title='Baton API', version='0.1.0')
 DB = Path(os.getenv('BATON_DB', 'data/baton.sqlite3'))
@@ -280,12 +281,14 @@ def run(request: Request):
     role=auth(request,True)
     with state() as s:
         if not s['sources']: raise HTTPException(400,'Import at least one source first')
-        key=hashlib.sha256(json.dumps([(x['id'],x['hash']) for x in s['sources']]).encode()+os.getenv('GEMINI_MODEL','offline').encode()+str(bool(os.getenv('GEMINI_API_KEY'))).encode()).hexdigest()
+        key=hashlib.sha256(json.dumps([(x['id'],x['hash']) for x in s['sources']]).encode()+cache_identity().encode()).hexdigest()
         if key in s['cache']:
             claims,mode=copy.deepcopy(s['cache'][key])
         else:
             claims,mode=reconstruct(s['sources'])
-            s['cache'][key]=[copy.deepcopy(claims),mode]
+            # Retry the configured provider next time after a transient outage or missing key.
+            if 'fallback' not in mode:
+                s['cache'][key]=[copy.deepcopy(claims),mode]
         old={c['id']:c for c in s['claims']}
         s['claims']=[old.get(c['id'],c) for c in claims]
         s['mode']=mode

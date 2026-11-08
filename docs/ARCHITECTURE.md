@@ -4,7 +4,7 @@
 flowchart TD
   A[Authorised notes / tasks / chat / public git] --> B[Validate and normalise exports]
   B --> C[Redact, hash, persist source and access label]
-  C --> D[Gemini JSON adapter or explicit offline extractor]
+  C --> D[Groq / Gemini JSON adapter or explicit offline extractor]
   D --> E[Pydantic candidate validation]
   E --> F[Deterministic quote attribution verifier]
   F --> G[Conflicts / gaps / dates / explicit owners]
@@ -44,4 +44,10 @@ Permission/source changes invalidate current acknowledgement records. They canno
 
 ## AI and outages
 
-The backend only sends redacted sources to Gemini when its key is configured. Model responses are validated and cached against source identity/content/model settings. On network errors, rate limits or invalid model output, reconstruction falls back to labelled deterministic extraction. The offline path quotes source lines directly and uses narrow category heuristics, retaining uncertainty instead of fabricating missing facts. Model calls run synchronously with a timeout; a durable background queue is deferred. Source instructions are treated as data in the extraction prompt. Quote verification and human approval remain independent controls even if prompt injection affects extraction.
+The backend supports Groq strict JSON-schema output and Gemini JSON extraction through direct HTTPX adapters. `auto` prefers Groq when configured, then Gemini; explicit provider selection overrides that order. Backend `.env` loads at startup without overriding host environment variables. Keys never enter the frontend, extraction cache or activity log. Groq-format keys are included in the source redaction patterns.
+
+Only redacted source IDs/content are transmitted. A second cloud provider is used only when explicitly enabled with `LLM_FALLBACK_PROVIDER`; the default is offline fallback. Requests have a configurable 15-second default I/O timeout and 5-second connect timeout, with at most two attempts per provider. Connection failures, 429s and server errors may retry once; Retry-After values over two seconds cause immediate fallback rather than a long wait. Authentication/request/model errors are not retried. Status messages classify failures without exposing upstream response bodies or exception details.
+
+Truncated, empty, malformed or schema-invalid output is never treated as successful extraction. Model responses pass Pydantic validation before the existing quote verifier. Strict-schema adaptation closes objects and requires every field while application-level length/count limits remain in Pydantic. Successful extraction is cached against source identity/content, provider/model settings and credential presence, never secret values. Fallback results are not cached so a later reconstruction can retry the provider.
+
+The offline path quotes source lines directly and uses narrow category heuristics, retaining uncertainty instead of fabricating missing facts. Model calls remain synchronous; a durable background queue is deferred. Source instructions are treated as data in the extraction prompt. Quote verification and human approval remain independent controls even if prompt injection affects extraction. `scripts/check_llm.py` bypasses the reconstruction cache and sends only a small synthetic example for live connection checking.
