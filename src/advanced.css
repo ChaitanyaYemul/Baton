@@ -17,7 +17,7 @@
   }
 }
 .advanced-help {
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.8;
   color: var(--muted);
   margin-bottom: 20px;
@@ -43,14 +43,14 @@
 }
 .action-item h3,
 .question-row h3 {
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.8;
   margin: 10px 0;
   word-break: break-word;
 }
 .action-item p,
 .question-row p {
-  font-size: 10px;
+  font-size: 14px;
   line-height: 1.8;
   color: var(--muted);
   margin-bottom: 12px;
@@ -70,7 +70,7 @@
 .action-item select,
 .question-row input,
 .question-row select {
-  font-size: 11px;
+  font-size: 14px;
 }
 .question-row {
   background: var(--surface);
@@ -90,7 +90,7 @@
   background: var(--surface);
   padding: 14px 18px;
   border-radius: 0 0 6px 6px;
-  font-size: 10px;
+  font-size: 14px;
   line-height: 1.9;
   color: var(--muted);
 }
@@ -104,7 +104,7 @@
   border-radius: 6px;
   margin: 15px 0;
   word-break: break-all;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.8;
 }
 .member-list {
@@ -118,7 +118,7 @@
   gap: 15px;
   padding: 16px;
   border-bottom: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 14px;
 }
 .member-row:last-child {
   border-bottom: 0;
@@ -137,7 +137,7 @@
   justify-content: center;
 }
 .login-extra button {
-  font-size: 11px;
+  font-size: 14px;
 }
 .join-form {
   width: 100%;
@@ -153,7 +153,7 @@
   margin: 0 0 15px;
 }
 .join-form p {
-  font-size: 11px;
+  font-size: 14px;
   color: var(--muted);
   line-height: 1.8;
   margin-bottom: 25px;

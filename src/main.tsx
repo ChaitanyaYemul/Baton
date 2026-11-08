@@ -94,14 +94,14 @@ type Workspace = {
   }[];
 };
 const nav = [
-  { id: "overview", label: "Overview", icon: Layers3 },
+  { id: "overview", label: "Home", icon: Layers3 },
   { id: "sources", label: "Sources", icon: Files },
-  { id: "review", label: "Claim ledger", icon: ShieldCheck },
-  { id: "questions", label: "Ask the leaver", icon: CircleHelp },
+  { id: "review", label: "Review", icon: ShieldCheck },
+  { id: "questions", label: "Questions", icon: CircleHelp },
   { id: "timeline", label: "Timeline", icon: Clock3 },
   { id: "ownership", label: "Ownership", icon: Users },
   { id: "handover", label: "Handover", icon: BookOpen },
-  { id: "history", label: "Versions & activity", icon: GitBranch },
+  { id: "history", label: "History", icon: GitBranch },
   { id: "people", label: "Team access", icon: Users },
 ];
 async function api(path: string, method = "GET", data?: unknown) {
@@ -254,6 +254,12 @@ function App() {
     } catch (e) {
       setError((e as Error).message);
     }
+  }
+  function navigateTo(nextPage: string) {
+    setPage(nextPage);
+    setQuery("");
+    setFilter("all");
+    setVersionView(null);
   }
   const reviewer = ws?.user.role === "reviewer";
   const claims = ws?.claims || [],
@@ -513,7 +519,7 @@ function App() {
 
         <nav className="workspace-nav" aria-label="Workspace navigation">
           {nav
-            .filter((item) => item.id !== "people" || reviewer)
+            .filter((item) => ["overview", "sources", "review", "questions", "handover"].includes(item.id))
             .map((item) => (
               <button
                 key={item.id}
@@ -521,12 +527,7 @@ function App() {
                 aria-label={item.label}
                 aria-current={page === item.id ? "page" : undefined}
                 title={item.label}
-                onClick={() => {
-                  setPage(item.id);
-                  setQuery("");
-                  setFilter("all");
-                  setVersionView(null);
-                }}
+                onClick={() => navigateTo(item.id)}
               >
                 <item.icon size={18} />
                 {item.label}
@@ -535,6 +536,17 @@ function App() {
                 ) : null}
               </button>
             ))}
+          <select
+            className="tools-select"
+            aria-label="More tools"
+            value={["timeline", "ownership", "history", "people"].includes(page) ? page : ""}
+            onChange={(event) => navigateTo(event.target.value)}
+          >
+            <option value="" disabled>More tools</option>
+            {nav.filter((item) => ["timeline", "ownership", "history", "people"].includes(item.id) && (item.id !== "people" || reviewer)).map((item) => (
+              <option key={item.id} value={item.id}>{item.label}</option>
+            ))}
+          </select>
         </nav>
         <div className="user-block">
           <span className="avatar">{ws.user.name[0]}</span>
@@ -580,12 +592,12 @@ function App() {
               </span>
               <h1>
                 {page === "overview"
-                  ? "The work continues."
+                  ? "Project overview"
                   : nav.find((n) => n.id === page)?.label}
               </h1>
               <p>
                 {page === "overview"
-                  ? "The project, the context, and the loose ends. All in one place."
+                  ? "See what is ready, what needs review, and what to do next."
                   : page === "sources"
                     ? "Bring the project’s knowledge together. Set access at the source."
                     : page === "review"
@@ -637,23 +649,19 @@ function App() {
               <section className="handover-banner">
                 <div>
                   <span className="eyebrow">
-                    A HANDOVER THAT SHOWS ITS RECEIPTS
+                    YOUR NEXT STEP
                   </span>
                   <h2>
-                    People move on.
-                    <br />
-                    Context stays.
+                    Pick up where they left off.
                   </h2>
                   <p>
-                    Aarav is passing the baton to Meera.
-                    <br />
-                    Let’s make sure nothing important gets left behind.
+                    Review the project knowledge, check its sources, and share a clear handover.
                   </p>
                   <button
                     className="light-button"
                     onClick={() => setPage(reviewer ? "review" : "handover")}
                   >
-                    {reviewer ? "Open review workspace" : "Open your handover"}
+                    {reviewer ? "Review project" : "Open handover"}
                     <ArrowUpRight size={16} />
                   </button>
                 </div>
@@ -717,7 +725,7 @@ function App() {
               <div className="overview-columns">
                 <section>
                   <div className="section-heading">
-                    <h2>Your handover, step by step</h2>
+                    <h2>What to do next</h2>
                     <span className="muted">THE WORKFLOW</span>
                   </div>
                   <div className="steps">
@@ -770,7 +778,7 @@ function App() {
                 </section>
                 <section className="attention-panel">
                   <div className="section-heading">
-                    <h2>Worth a closer look</h2>
+                    <h2>Needs your attention</h2>
                     <span className="orange-dot" />
                   </div>
                   {conflicts
@@ -973,26 +981,19 @@ function App() {
                   )}
                 </div>
               </div>
-              <div className="filter-tabs">
-                {[
-                  "all",
-                  "pending",
-                  "verified",
-                  "attested",
-                  "conflicting",
-                  "gap",
-                  "inferred",
-                  "rejected",
-                ].map((f) => (
-                  <button
-                    key={f}
-                    className={filter === f ? "selected" : ""}
-                    onClick={() => setFilter(f)}
-                  >
-                    {f === "all" ? "All claims" : f}
-                  </button>
-                ))}
-              </div>
+              <label className="review-filter">
+                Show
+                <select value={filter} onChange={(event) => setFilter(event.target.value)}>
+                  <option value="all">All claims</option>
+                  <option value="pending">Needs review</option>
+                  <option value="verified">Source verified</option>
+                  <option value="attested">Human confirmed</option>
+                  <option value="conflicting">Conflicts</option>
+                  <option value="gap">Missing context</option>
+                  <option value="inferred">Inferred</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </label>
               <div className="claim-grid">{shown.map((c) => card(c))}</div>
               {!shown.length && (
                 <div className="empty">
