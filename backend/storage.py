@@ -147,7 +147,10 @@ def remote_state(initial,role,user_id=None,name=None,workspace_id=1):
         con.execute("select set_config('baton.viewer_role',%s,true)",(role,))
         con.execute("select set_config('baton.viewer_id',%s,true)",(user_id or role,))
         con.execute("select set_config('baton.viewer_name',%s,true)",(name or '',))
-        con.execute('select pg_advisory_xact_lock(7261401,%s)',(workspace_id,))
+        if workspace_id == 1:
+            con.execute('select pg_advisory_xact_lock(7261401)')
+        else:
+            con.execute('select pg_advisory_xact_lock(7261401,%s)',(workspace_id,))
         if user_id and user_id != role:
             con.execute("select set_config('baton.auth_phase','1',true)")
             membership = con.execute(

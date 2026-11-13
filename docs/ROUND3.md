@@ -28,7 +28,7 @@ Project switching uses a labelled native selector. The questionnaire and catch-u
 
 - The production frontend build and all 38 Python tests passed locally. Run `npm run build` and `python -m pytest -q` to reproduce.
 - All three Round 3 API acceptance journeys also passed through the PostgreSQL adapter with the restricted runtime role against disposable PGlite databases. They cover named routing, follow-ups, reviewer confirmation, two project roles for one identity, revocation, cross-project evidence, history and exports, and distinct acknowledgement baselines.
-- The standalone SQL checks passed on the same disposable engine. GitHub Actions is configured to apply every migration to a native PostgreSQL 16 service and repeat `tests/round3_rls.sql`. The checks cover project-specific reads and writes, repeated identifiers in separate projects, assigned answers and source revocation.
+- The standalone SQL checks passed locally and on a native PostgreSQL 16 service in GitHub Actions. The checks apply every migration and verify project-specific reads and writes, repeated identifiers in separate projects, assigned answers and source revocation.
 - A recorded Chromium walkthrough exercised the questionnaire, review and publication, catch-up evidence and project switching using synthetic data. The 390 px mobile catch-up screen fit without horizontal scrolling.
 - Demo inputs are synthetic. Production provider quality, onboarding time saved and participant feedback require separate measurement.
 
