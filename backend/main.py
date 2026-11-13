@@ -11,7 +11,7 @@ import secrets
 import sqlite3
 import threading
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Literal
@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from backend.engine import DEMO, KINDS, now, parse_source, reconstruct, redact
 from backend.llm import cache_identity
 from backend import storage
+from backend.questionnaire import prompt_for, follow_up
 
 app = FastAPI(title='Baton API', version='0.1.0')
 if os.getenv('VERCEL')=='1' and not storage.enabled():
@@ -61,6 +62,15 @@ def connect():
         if name not in columns: con.execute('ALTER TABLE sessions ADD COLUMN '+name+' TEXT')
     con.execute('CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, username TEXT UNIQUE, role TEXT, name TEXT, salt TEXT, password TEXT, active INTEGER NOT NULL DEFAULT 1)')
     con.execute('CREATE TABLE IF NOT EXISTS invites (token TEXT PRIMARY KEY, username TEXT, role TEXT, name TEXT, expires REAL, used INTEGER NOT NULL DEFAULT 0)')
+    if 'workspace_id' not in {r[1] for r in con.execute('PRAGMA table_info(invites)')}:
+        con.execute('ALTER TABLE invites ADD COLUMN workspace_id INTEGER NOT NULL DEFAULT 1')
+    con.execute('CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY, name TEXT NOT NULL)')
+    con.execute('CREATE TABLE IF NOT EXISTS memberships (workspace_id INTEGER, account_id TEXT, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(workspace_id,account_id))')
+    con.execute("INSERT OR IGNORE INTO projects VALUES (1, 'Fest registration portal')")
+    # Backfill only on first upgrade. Later revocations must survive every connection.
+    con.execute('CREATE TABLE IF NOT EXISTS schema_updates (name TEXT PRIMARY KEY)')
+    if con.execute("INSERT OR IGNORE INTO schema_updates VALUES ('project-memberships')").rowcount:
+        con.execute('INSERT OR IGNORE INTO memberships SELECT 1,id,role,active FROM accounts')
     con.execute('INSERT OR IGNORE INTO workspace VALUES (1, ?)', (json.dumps(initial()),))
     configure_credentials(con)
     con.commit()
@@ -78,7 +88,7 @@ def configure_credentials(con):
             existing = con.execute('SELECT password FROM users WHERE role=?', (role,)).fetchone()
             if not existing or existing[0] != digest:
                 con.execute('INSERT OR REPLACE INTO users VALUES (?,?,?)', (role,salt,digest))
-                con.execute('DELETE FROM sessions WHERE role=?', (role,))
+                con.execute('DELETE FROM sessions WHERE role=? AND account_id IS NULL', (role,))
 
 from functools import lru_cache
 
@@ -88,16 +98,30 @@ def password_digest(role, password, salt):
 
 @contextmanager
 def state(role=None):
+    principal = PRINCIPAL.get() or {}
+    workspace_id = principal.get('workspace_id', 1)
     if storage.enabled():
-        with storage.remote_state(initial,role,actor_id(role),actor_name(role)) as data:
-            yield data
+        try:
+            with storage.remote_state(initial,role,actor_id(role),actor_name(role),workspace_id) as data:
+                yield data
+        except PermissionError as error:
+            raise HTTPException(404,'Project unavailable') from error
         return
     with LOCK:
         con = connect()
         try:
-            data = json.loads(con.execute('SELECT body FROM workspace WHERE id=1').fetchone()[0])
+            con.execute('BEGIN IMMEDIATE')
+            if principal.get('account_id') and not con.execute(
+                'SELECT 1 FROM memberships WHERE workspace_id=? AND account_id=? AND role=? AND active',
+                (workspace_id,principal['account_id'],role)
+            ).fetchone():
+                raise HTTPException(404,'Project unavailable')
+            row = con.execute('SELECT body FROM workspace WHERE id=?', (workspace_id,)).fetchone()
+            if row is None:
+                raise HTTPException(404, 'Project unavailable')
+            data = json.loads(row[0])
             yield data
-            con.execute('UPDATE workspace SET body=? WHERE id=1', (json.dumps(data),))
+            con.execute('UPDATE workspace SET body=? WHERE id=?', (json.dumps(data), workspace_id))
             con.commit()
         finally:
             con.close()
@@ -105,24 +129,90 @@ def state(role=None):
 def audit(s, role, action, detail=''):
     s['audit'].append({'at': now(), 'actor': actor_name(role), 'action': action, 'detail': detail})
 
-def auth(request, reviewer=False):
+def project_memberships(con, account_id):
+    return con.execute(
+        'SELECT p.id,p.name,m.role FROM memberships m JOIN projects p ON p.id=m.workspace_id '
+        'WHERE m.account_id=? AND m.active ORDER BY p.id', (account_id,)
+    ).fetchall()
+
+
+def auth(request, reviewer=False, identity_only=False):
     token = request.cookies.get('baton_session', '')
     with LOCK:
         con = connect()
         row = con.execute('SELECT role,account_id,name FROM sessions WHERE token=? AND expires>?', (hashlib.sha256(token.encode()).hexdigest(), time.time())).fetchone()
-        if row and row[1]:
-            account=con.execute('SELECT role,name,active FROM accounts WHERE id=?',(row[1],)).fetchone()
-            if not account or not account[2]: row=None
-            else: row=(account[0],row[1],account[1])
-        con.close()
+        try:
+            if row and row[1]:
+                account=con.execute('SELECT name FROM accounts WHERE id=?',(row[1],)).fetchone()
+                projects=project_memberships(con,row[1]) if account else []
+                row=(row[0],row[1],account[0]) if projects else None
+            elif row:
+                projects=[(1, 'Fest registration portal', row[0])]
+        finally:
+            con.close()
     if not row:
         raise HTTPException(401, 'Sign in to continue')
-    PRINCIPAL.set({'role':row[0],'id':row[1] or row[0],'name':row[2] or ROLES[row[0]][0]})
-    if reviewer and row[0] != 'reviewer':
+    requested = request.headers.get('x-baton-project')
+    if requested is None and request.url.path.startswith('/api/export/'):
+        requested = request.query_params.get('project')
+    project = projects[0] if identity_only or requested is None else next(
+        (item for item in projects if str(item[0]) == requested), None
+    )
+    if project is None:
+        raise HTTPException(404, 'Project unavailable')
+    role = project[2]
+    PRINCIPAL.set({'role':role,'id':row[1] or row[0],'name':row[2] or ROLES[row[0]][0],
+                   'account_id':row[1],'workspace_id':project[0],'projects':projects})
+    if reviewer and role != 'reviewer':
         raise HTTPException(403, 'Reviewer access required')
     if request.method not in ('GET','HEAD','OPTIONS') and request.headers.get('x-baton-request') != '1':
         raise HTTPException(403, 'Missing request protection header')
-    return row[0]
+    return role
+
+
+@app.get('/api/projects')
+def list_projects(request: Request):
+    auth(request, identity_only=True)
+    principal = PRINCIPAL.get()
+    return {'can_create': bool(principal['account_id']),
+            'projects': [{'id':p[0],'name':p[1],'role':p[2]} for p in principal['projects']]}
+
+
+class ProjectIn(BaseModel):
+    name: str = Field(min_length=2,max_length=100)
+
+
+@app.post('/api/projects', status_code=201)
+def create_project(body: ProjectIn, request: Request):
+    auth(request, identity_only=True)
+    account_id = PRINCIPAL.get()['account_id']
+    if not account_id:
+        raise HTTPException(403, 'Use a named account to create a project')
+    name = redact(body.name.strip())[0]
+    if len(name) < 2:
+        raise HTTPException(400, 'Enter a project name')
+    data = {**initial(), 'project':name}
+    with LOCK:
+        con = connect()
+        try:
+            workspace_id = None
+            for _ in range(3):
+                candidate = secrets.randbelow(2147483645) + 2
+                if con.execute('INSERT INTO projects VALUES (?,?) ON CONFLICT(id) DO NOTHING RETURNING id',
+                               (candidate,name)).fetchone():
+                    workspace_id = candidate
+                    break
+            if workspace_id is None:
+                raise HTTPException(503, 'Could not allocate a project. Try again.')
+            con.execute('INSERT INTO memberships VALUES (?,?,?,?)', (workspace_id,account_id,'reviewer',True))
+            if storage.enabled():
+                con.create_workspace(workspace_id, data)
+            else:
+                con.execute('INSERT INTO workspace VALUES (?,?)', (workspace_id,json.dumps(data)))
+            con.commit()
+        finally:
+            con.close()
+    return {'id':workspace_id,'name':name,'role':'reviewer'}
 
 @app.middleware('http')
 async def guard(request, call_next):
@@ -158,9 +248,10 @@ def login(body: Login, request: Request, response: Response):
             raise HTTPException(429, 'Too many attempts; try again in a minute')
         con = connect()
         account=con.execute('SELECT id,role,name,salt,password,active FROM accounts WHERE username=?',(body.username.casefold(),)).fetchone() if body.username else None
-        role=account[1] if account else body.role
+        projects = project_memberships(con,account[0]) if account else []
+        role=projects[0][2] if projects else body.role
         name=account[2] if account else ROLES[role][0]
-        row=(account[3],account[4]) if account and account[5] else None if body.username else con.execute('SELECT salt,password FROM users WHERE role=?', (body.role,)).fetchone()
+        row=(account[3],account[4]) if projects else None if body.username else con.execute('SELECT salt,password FROM users WHERE role=?', (body.role,)).fetchone()
         if not body.username and os.getenv('BATON_DEMO','0')!='1' and not os.getenv('BATON_'+body.role.upper()+'_PASSWORD'):
             row=None
         digest = hashlib.pbkdf2_hmac('sha256', body.password.encode(), (row[0] if row else 'dummy').encode(), 200000).hex()
@@ -177,7 +268,7 @@ def login(body: Login, request: Request, response: Response):
 
 @app.post('/api/logout')
 def logout(request: Request, response: Response):
-    auth(request)
+    auth(request, identity_only=True)
     with LOCK:
         con=connect()
         con.execute('DELETE FROM sessions WHERE token=?', (hashlib.sha256(request.cookies.get('baton_session','').encode()).hexdigest(),))
@@ -193,14 +284,17 @@ class InviteIn(BaseModel):
 @app.post('/api/invites')
 def invite(body: InviteIn,request: Request):
     role=auth(request,True)
+    workspace_id = PRINCIPAL.get()['workspace_id']
     with LOCK:
         con=connect()
         try:
-            if con.execute('SELECT id FROM accounts WHERE username=?',(body.username.casefold(),)).fetchone():
-                raise HTTPException(409,'That username is already registered')
+            if con.execute('SELECT 1 FROM accounts a JOIN memberships m ON a.id=m.account_id '
+                           'WHERE a.username=? AND m.workspace_id=? AND m.active',
+                           (body.username.casefold(),workspace_id)).fetchone():
+                raise HTTPException(409,'That username already has access to this project')
             code=secrets.token_urlsafe(32)
-            con.execute('INSERT INTO invites(token,username,role,name,expires,used) VALUES (?,?,?,?,?,0)',
-                        (hashlib.sha256(code.encode()).hexdigest(),body.username.casefold(),body.role,redact(body.name)[0],time.time()+86400))
+            con.execute('INSERT INTO invites(token,username,role,name,expires,used,workspace_id) VALUES (?,?,?,?,?,0,?)',
+                        (hashlib.sha256(code.encode()).hexdigest(),body.username.casefold(),body.role,redact(body.name)[0],time.time()+86400,workspace_id))
             con.commit()
         finally:con.close()
     with state(role) as s:audit(s,role,'Created one-time invitation',body.username.casefold()+' · '+body.role)
@@ -217,24 +311,39 @@ def register(body: RegisterIn,request: Request):
         con=connect()
         try:
             if not storage.enabled():con.execute('BEGIN IMMEDIATE')
-            row=con.execute('SELECT username,role,name,expires,used FROM invites WHERE token=?'+(' FOR UPDATE' if storage.enabled() else ''),
+            row=con.execute('SELECT username,role,name,expires,used,workspace_id FROM invites WHERE token=?'+(' FOR UPDATE' if storage.enabled() else ''),
                             (hashlib.sha256(body.code.encode()).hexdigest(),)).fetchone()
             if not row or row[4] or row[3]<time.time():raise HTTPException(400,'Invitation is invalid, expired or already used')
-            if con.execute('SELECT id FROM accounts WHERE username=?',(row[0],)).fetchone():raise HTTPException(409,'Username is already registered')
-            salt=secrets.token_hex(24)
-            digest=hashlib.pbkdf2_hmac('sha256',body.password.encode(),salt.encode(),200000).hex()
-            con.execute('INSERT INTO accounts(id,username,role,name,salt,password) VALUES (?,?,?,?,?,?)',(secrets.token_hex(16),row[0],row[1],row[2],salt,digest))
+            account=con.execute('SELECT id,name,salt,password FROM accounts WHERE username=?'+(' FOR UPDATE' if storage.enabled() else ''),(row[0],)).fetchone()
+            if account:
+                account_id,name,salt,password=account
+                if not hmac.compare_digest(password_digest('account',body.password,salt),password):
+                    raise HTTPException(401,'Use the existing password for this username')
+                if con.execute('SELECT 1 FROM memberships WHERE workspace_id=? AND account_id=? AND active',
+                               (row[5],account_id)).fetchone():
+                    raise HTTPException(409,'This account already has access to the project')
+            else:
+                account_id,name,salt=secrets.token_hex(16),row[2],secrets.token_hex(24)
+                digest=password_digest('account',body.password,salt)
+                inserted=con.execute('INSERT INTO accounts(id,username,role,name,salt,password) VALUES (?,?,?,?,?,?) '
+                                     'ON CONFLICT(username) DO NOTHING RETURNING id',
+                                     (account_id,row[0],row[1],name,salt,digest)).fetchone()
+                if not inserted:
+                    raise HTTPException(409,'The username was registered concurrently. Retry with its existing password.')
+            con.execute('INSERT INTO memberships VALUES (?,?,?,?) ON CONFLICT(workspace_id,account_id) '
+                        'DO UPDATE SET role=excluded.role,active=excluded.active',(row[5],account_id,row[1],True))
             con.execute('UPDATE invites SET used=1 WHERE token=?',(hashlib.sha256(body.code.encode()).hexdigest(),))
             con.commit()
         finally:con.close()
-    return {'username':row[0],'name':row[2],'role':row[1]}
+    return {'username':row[0],'name':name,'role':row[1],'project_id':row[5]}
 
 @app.get('/api/members')
 def members(request: Request):
     auth(request,True)
     with LOCK:
         con=connect()
-        rows=con.execute('SELECT id,username,role,name,active FROM accounts ORDER BY username').fetchall()
+        rows=con.execute('SELECT a.id,a.username,m.role,a.name,m.active FROM accounts a JOIN memberships m ON a.id=m.account_id '
+                         'WHERE m.workspace_id=? ORDER BY a.username',(PRINCIPAL.get()['workspace_id'],)).fetchall()
         con.close()
     return [{'id':r[0],'username':r[1],'role':r[2],'name':r[3],'active':bool(r[4])} for r in rows]
 
@@ -248,9 +357,11 @@ def member_access(member_id: str,body: MemberUpdate,request: Request):
     with LOCK:
         con=connect()
         try:
-            if not con.execute('SELECT id FROM accounts WHERE id=?',(member_id,)).fetchone():raise HTTPException(404,'Member not found')
-            con.execute('UPDATE accounts SET active=? WHERE id=?',(body.active,member_id))
-            con.execute('DELETE FROM sessions WHERE account_id=?',(member_id,))
+            updated=con.execute('UPDATE memberships SET active=? WHERE workspace_id=? AND account_id=? RETURNING account_id',
+                                (body.active,PRINCIPAL.get()['workspace_id'],member_id)).fetchone()
+            if not updated:raise HTTPException(404,'Member not found')
+            if not project_memberships(con,member_id):
+                con.execute('DELETE FROM sessions WHERE account_id=?',(member_id,))
             con.commit()
         finally:con.close()
     with state(role) as s:audit(s,role,'Changed member access',member_id+' · '+str(body.active))
@@ -267,6 +378,7 @@ def filtered(claims, s, role):
             result.append({'id':claim['id'],'restricted':True,'text':'Restricted knowledge','owner':'Kabir','reason':'Ask the reviewer for access.'})
         else:
             c=copy.deepcopy(claim)
+            c.pop('question_assignee_id', None)
             # Never reveal identifiers of conflicting restricted records.
             c['conflicts']=[x for x in c['conflicts'] if any(p['id']==x and visible(p,s,role) for p in claims)]
             result.append(c)
@@ -290,6 +402,66 @@ def accessible_actions(s,role):
             result.append(action)
     return result
 
+
+def visible_questions(s, role):
+    claims = {c['id']:c for c in s['claims'] if visible(c,s,role)}
+    result = []
+    for question in s.get('questions', []):
+        claim = claims.get(question['claim_id'])
+        if not claim:
+            continue
+        assignee_id = question.get('assignee_id')
+        allowed = role == 'reviewer' or (
+            assignee_id == actor_id(role) if assignee_id else role == 'leaver' and question['assignee'] == 'leaver'
+        )
+        if allowed and not (s['sudden_exit'] and role == 'leaver'):
+            answers = question.get('answers', [])
+            if role != 'reviewer':
+                answers = [answer for answer in answers if answer['user_id'] == actor_id(role)]
+            open_gap = claim['status'] == 'gap' and claim['review'] == 'pending'
+            latest = answers[-1] if answers else None
+            result.append({**question, 'prompt':question.get('prompt') or claim['text'],
+                           'answers':answers, 'claim_status':claim['status'], 'claim_review':claim['review'],
+                           'can_answer':open_gap and (not assignee_id or assignee_id == actor_id(role)),
+                           'can_confirm':bool(role == 'reviewer' and open_gap and latest and not latest['follow_up']
+                                              and (not assignee_id or latest['user_id'] == assignee_id))})
+    return result
+
+
+def personal_catch_up(s, role):
+    if not s['versions']:
+        return {'latest_version':None,'baseline':None,'responsibilities':[],'risks':[],'actions':[]}
+    versions = {v['number']:v for v in s['versions']}
+    latest = s['versions'][-1]
+    receipt = max(
+        (a for a in s['acks'] if a.get('user_id',a['role']) == actor_id(role) and a['version'] in versions),
+        key=lambda a:(a['version'],a['at']), default=None
+    )
+    previous = versions[receipt['version']]['claims'] if receipt else []
+    before = {c['id']:c for c in previous if visible(c,s,role)}
+    responsibilities, risks = [], []
+    for claim in latest['claims']:
+        if not visible(claim,s,role):
+            continue
+        old = before.get(claim['id'])
+        entry = {key:claim[key] for key in ('id','text','owner')}
+        if old and old['owner'] != claim['owner']:
+            responsibilities.append({**entry,'previous_owner':old['owner']})
+        if claim.get('type') == 'risk' and (not old or old.get('type') != 'risk'):
+            risks.append(entry)
+    today = datetime.now(timezone.utc).date().isoformat()
+    actions = []
+    for action in accessible_actions(s,role):
+        if action['status'] == 'done':
+            continue
+        overdue = bool(action.get('due') and action['due'] < today)
+        if overdue or action['status'] == 'blocked':
+            actions.append({**action,'overdue':overdue})
+    actions.sort(key=lambda a:(a['due'] or '9999-12-31',a['id']))
+    return {'latest_version':latest['number'],
+            'baseline':{key:receipt[key] for key in ('version','at','section')} if receipt else None,
+            'responsibilities':responsibilities,'risks':risks,'actions':actions}
+
 @app.get('/api/workspace')
 def workspace(request: Request):
     role=auth(request)
@@ -303,9 +475,13 @@ def workspace(request: Request):
                 'acks':[a for a in s['acks'] if (a.get('user_id',a['role'])==actor_id(role) or role=='reviewer') and a.get('access_hash')==digest], 'mode':s['mode'] if role=='reviewer' else 'Approved handover',
                 'sudden_exit':s['sudden_exit'],'demo':os.getenv('BATON_DEMO','0')=='1',
                 'storage':'Supabase Postgres + RLS' if storage.enabled() else 'Local SQLite',
+                'workspace_id':PRINCIPAL.get()['workspace_id'],
+                'projects':[{'id':p[0],'name':p[1],'role':p[2]} for p in PRINCIPAL.get()['projects']],
+                'can_create_project':bool(PRINCIPAL.get()['account_id']),
+                'catch_up':personal_catch_up(s,role),
                 'actions':accessible_actions(s,role),
                 'approved_claims':filtered(s['versions'][-1]['claims'],s,role) if s['versions'] else [],
-                'questions':[q for q in s.get('questions',[]) if any(c['id']==q['claim_id'] and visible(c,s,role) for c in s['claims'])] if role in ('reviewer','leaver') else [],
+                'questions':visible_questions(s,role),
                 'receipt_stale':any(a.get('user_id',a['role'])==actor_id(role) and a['version']==len(s['versions']) and a.get('access_hash')!=digest for a in s['acks'])}
         return result
 
@@ -456,6 +632,9 @@ def review(claim_id: str,body: ReviewIn,request: Request):
         if not c or not visible(c,s,role): raise HTTPException(404,'Claim missing')
         if role=='leaver' and (body.action!='attest' or c['status']!='gap' or s['sudden_exit']):
             raise HTTPException(403,'Leaver may answer open gap questions only')
+        if role == 'leaver' and any(q['claim_id']==claim_id and (q.get('assignee_id') or q['assignee'] != 'leaver')
+                                   for q in s['questions']):
+            raise HTTPException(403, 'Use the assigned questionnaire to answer this gap')
         if body.action=='approve':
             if c['status'] not in ('verified','attested'): raise HTTPException(400,'Resolve uncertainty or reject this claim before approval')
             c['review']='approved'
@@ -491,7 +670,10 @@ def publish(request: Request):
         claims=[c for c in s['claims'] if c['review']=='approved']
         if not claims: raise HTTPException(400,'Approve at least one claim')
         if not all(visible(c,s,'reviewer') for c in claims): raise HTTPException(400,'Some evidence was removed; reconstruct and review again')
-        version={'number':len(s['versions'])+1,'at':now(),'by':actor_name(role),'claims':copy.deepcopy(claims)}
+        snapshot = copy.deepcopy(claims)
+        for item in snapshot:
+            item.pop('question_assignee_id', None)
+        version={'number':len(s['versions'])+1,'at':now(),'by':actor_name(role),'claims':snapshot}
         s['versions'].append(version)
         audit(s,role,'Published approved handover',f"Version {version['number']}")
         return {'number':version['number']}
@@ -585,21 +767,121 @@ class QuestionAssignment(BaseModel):
     assignee: Literal['leaver','reviewer']
     priority: Literal['high','medium','low']='medium'
     due: date | None = None
+    assignee_id: str | None = Field(default=None,max_length=64)
+
+
+@app.post('/api/questions/generate')
+def generate_questions(request: Request):
+    role = auth(request, True)
+    with state(role) as s:
+        existing = {q['claim_id'] for q in s['questions']}
+        generated = []
+        for claim in s['claims']:
+            if claim['id'] in existing or claim['status'] != 'gap' or claim['review'] != 'pending' or not visible(claim,s,role):
+                continue
+            prompt, hint = prompt_for(claim)
+            question = {'id':secrets.token_hex(8),'claim_id':claim['id'],'assignee':'reviewer',
+                        'priority':'medium','due':None,'prompt':prompt,'answer_hint':hint,'updated_at':now()}
+            s['questions'].append(question)
+            generated.append(question)
+        if generated:
+            audit(s,role,'Generated gap questionnaire',str(len(generated)))
+    return {'created':len(generated)}
 
 @app.post('/api/questions/assign')
 def assign_question(body: QuestionAssignment,request: Request):
     role=auth(request,True)
+    member = None
+    if body.assignee_id:
+        con = connect()
+        try:
+            member = con.execute('SELECT a.name,m.role FROM memberships m JOIN accounts a ON a.id=m.account_id '
+                                 'WHERE m.workspace_id=? AND m.account_id=? AND m.active',
+                                 (PRINCIPAL.get()['workspace_id'],body.assignee_id)).fetchone()
+        finally:
+            con.close()
+        if not member:
+            raise HTTPException(404,'Active project member unavailable')
     with state(role) as s:
         claim=next((c for c in s['claims'] if c['id']==body.claim_id and visible(c,s,role)),None)
-        if not claim or claim.get('status')!='gap': raise HTTPException(400,'Choose an unresolved gap question')
+        if not claim or claim.get('status')!='gap' or claim['review']!='pending':
+            raise HTTPException(400,'Choose an unresolved gap question')
+        if member and (not visible(claim,s,member[1]) or (s['sudden_exit'] and member[1]=='leaver')):
+            raise HTTPException(400,'Choose a teammate who can access every supporting source and is available to answer')
         assignee='reviewer' if s['sudden_exit'] else body.assignee
         item=next((q for q in s.setdefault('questions',[]) if q['claim_id']==body.claim_id),None)
         if item is None:
             item={'id':secrets.token_hex(8),'claim_id':body.claim_id}
             s['questions'].append(item)
-        item.update(assignee=assignee,priority=body.priority,due=body.due.isoformat() if body.due else None,updated_at=now())
+        prompt, hint = prompt_for(claim)
+        item.update(assignee=assignee,assignee_id=body.assignee_id,assignee_name=member[0] if member else None,
+                    prompt=prompt,answer_hint=hint,priority=body.priority,
+                    due=body.due.isoformat() if body.due else None,updated_at=now())
+        if member:
+            claim['question_assignee_id'] = body.assignee_id
+        else:
+            claim.pop('question_assignee_id', None)
         audit(s,role,'Assigned gap question',body.claim_id+' → '+assignee)
         return item
+
+
+def question_context(s, role, question_id):
+    if not any(q['id']==question_id for q in visible_questions(s,role)):
+        raise HTTPException(404,'Question unavailable')
+    question = next(q for q in s['questions'] if q['id']==question_id)
+    claim = next(c for c in s['claims'] if c['id']==question['claim_id'])
+    return question, claim
+
+
+@app.get('/api/questions/{question_id}/evidence')
+def question_evidence(question_id: str, request: Request):
+    role = auth(request)
+    with state(role) as s:
+        _, claim = question_context(s,role,question_id)
+        sources = {source['id']:source['name'] for source in s['sources']}
+        return [{**entry,'source':sources[entry['source_id']]} for entry in claim['evidence']]
+
+
+class GapAnswer(BaseModel):
+    text: str = Field(min_length=1,max_length=2000)
+    uncertain: bool = False
+
+
+@app.post('/api/questions/{question_id}/answer')
+def answer_question(question_id: str, body: GapAnswer, request: Request):
+    role = auth(request)
+    with state(role) as s:
+        question, claim = question_context(s,role,question_id)
+        if claim['status'] != 'gap' or claim['review'] != 'pending':
+            raise HTTPException(409,'This gap already has a review decision')
+        if question.get('assignee_id') and question['assignee_id'] != actor_id(role):
+            raise HTTPException(403,'Only the assigned teammate can answer this question')
+        text = redact(body.text.strip())[0]
+        if not text:
+            raise HTTPException(400,'Enter an answer')
+        answer = {'text':text,'user_id':actor_id(role),'by':actor_name(role),'at':now(),
+                  'follow_up':follow_up(claim,text,body.uncertain)}
+        question['answers'] = [*question.get('answers', [])[-19:],answer]
+        audit(s,role,'Answered gap questionnaire',question_id)
+        return answer
+
+
+@app.post('/api/questions/{question_id}/confirm')
+def confirm_answer(question_id: str, request: Request):
+    role = auth(request,True)
+    with state(role) as s:
+        question, claim = question_context(s,role,question_id)
+        answers = question.get('answers', [])
+        latest = answers[-1] if answers else None
+        if (claim['status'] != 'gap' or claim['review'] != 'pending' or not latest or latest['follow_up']
+                or (question.get('assignee_id') and latest['user_id'] != question['assignee_id'])):
+            raise HTTPException(409,'Get a complete answer from the current assignee before confirming')
+        claim.update(text=latest['text'],status='attested',review='pending',
+                     reason='A reviewer confirmed a named questionnaire answer. Approval is still required.',
+                     attestation={'by':latest['by'],'at':latest['at'],'confirmed_by':actor_name(role),'confirmed_at':now()})
+        question.update(answered_at=latest['at'],answered_by=latest['by'])
+        audit(s,role,'Confirmed questionnaire answer',question_id)
+    return {'ok':True}
 
 def markdown(s,role):
     if not s['versions']: raise HTTPException(400,'Publish a handover first')

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus, CheckCheck, ArrowUpRight, UserPlus } from "lucide-react";
 import "./advanced.css";
+import { EvidenceDisclosure } from "./Round3";
 
 type Claim = {
   id: string;
@@ -25,6 +26,15 @@ export type Assignment = {
   id: string;
   claim_id: string;
   assignee: "reviewer" | "leaver";
+  assignee_id?: string;
+  assignee_name?: string;
+  prompt: string;
+  answer_hint?: string;
+  claim_status: string;
+  claim_review: string;
+  can_answer: boolean;
+  can_confirm: boolean;
+  answers: { text: string; by: string; at: string; follow_up: string | null }[];
   priority: "high" | "medium" | "low";
   due: string | null;
   answered_at?: string;
@@ -313,140 +323,156 @@ function ActionRow({
 }
 
 export function QuestionQueue({
-  claims,
-  assignments,
-  api,
-  act,
-  busy,
-  reviewer,
-  sudden,
-  onInspect,
+  claims, assignments, api, act, busy, reviewer, sudden, onInspect,
 }: {
   claims: Claim[];
   assignments: Assignment[];
   sudden: boolean;
   onInspect: (claim: Claim) => void;
 } & Shared) {
-  const priority = (c: Claim) =>
-    assignments.find((q) => q.claim_id === c.id)?.priority || "medium";
+  const [members, setMembers] = useState<Member[]>([]);
+  const [memberError, setMemberError] = useState("");
+  useEffect(() => {
+    if (!reviewer || busy) return;
+    let cancelled = false;
+    api("/members").then((rows: Member[]) => {
+      if (!cancelled) {
+        setMembers(rows.filter((member) => member.active));
+        setMemberError("");
+      }
+    }).catch((error: Error) => {
+      if (!cancelled) setMemberError(error.message);
+    });
+    return () => { cancelled = true; };
+  }, [reviewer, busy, api]);
+  const assigned = new Set(assignments.map((item) => item.claim_id));
+  const unassigned = claims.filter((claim) => !assigned.has(claim.id));
   const rank = { high: 0, medium: 1, low: 2 };
   return (
     <section className="advanced-section">
       <div className="section-heading">
-        <h2>Targeted gap questions</h2>
-        <span className="muted">
-          {sudden ? "Reviewer fallback" : "Departing-member questionnaire"}
-        </span>
+        <h2>Ask the leaver</h2>
+        {reviewer && (
+          <button className="primary" disabled={busy || !unassigned.length} onClick={() =>
+            act(() => api("/questions/generate", "POST"), "Questions generated from unresolved context.")
+          }>Generate questions</button>
+        )}
       </div>
-      <div className="question-list">
-        {[...claims]
-          .sort((a, b) => rank[priority(a)] - rank[priority(b)])
-          .map((c) => (
-            <QuestionRow
-              key={c.id}
-              claim={c}
-              assignment={assignments.find((q) => q.claim_id === c.id)}
-              api={api}
-              act={act}
-              busy={busy}
-              reviewer={reviewer}
-              sudden={sudden}
-              onInspect={() => onInspect(c)}
-            />
-          ))}
-      </div>
+      {memberError && <p role="alert">{memberError}</p>}
+      {reviewer && unassigned.length > 0 && <p className="muted">{unassigned.length} unresolved gaps are ready for questions.</p>}
+      {!reviewer && unassigned.map((claim) => (
+        <article className="question-row" key={claim.id}>
+          <p>{claim.text}</p>
+          <button className="secondary" onClick={() => onInspect(claim)}>Open gap and evidence</button>
+        </article>
+      ))}
+      {[...assignments].sort((a, b) => rank[a.priority] - rank[b.priority]).map((item) => (
+        <QuestionRow
+          key={item.id + (item.assignee_id ?? item.assignee)}
+          question={item}
+          members={members}
+          api={api}
+          act={act}
+          busy={busy}
+          reviewer={reviewer}
+          sudden={sudden}
+        />
+      ))}
     </section>
   );
 }
-function QuestionRow({
-  claim,
-  assignment,
-  api,
-  act,
-  busy,
-  reviewer,
-  sudden,
-  onInspect,
-}: {
-  claim: Claim;
-  assignment?: Assignment;
+
+function QuestionRow({ question, members, api, act, busy, reviewer, sudden }: {
+  question: Assignment;
+  members: Member[];
   sudden: boolean;
-  onInspect: () => void;
 } & Shared) {
-  const [priority, setPriority] = useState(assignment?.priority || "medium"),
-    [assignee, setAssignee] = useState(assignment?.assignee || "leaver"),
-    [due, setDue] = useState(assignment?.due || "");
+  const [answer, setAnswer] = useState("");
+  const [uncertain, setUncertain] = useState(false);
+  const latest = question.answers.at(-1);
+  const canRoute = reviewer && question.claim_status === "gap" && question.claim_review === "pending";
   return (
     <article className="question-row">
       <div>
-        <span className="badge gap">Missing context</span>
-        <h3>{claim.text}</h3>
+        <span className="badge gap">{question.answered_at ? "Confirmed" : latest ? "Awaiting review" : "Open"}</span>
+        <h3>{question.prompt}</h3>
         <p>
-          {assignment
-            ? "Assigned to " + (sudden ? "reviewer" : assignment.assignee)
-            : "Not yet assigned"}
-          {assignment?.due ? " · due " + assignment.due : ""}
+          {question.assignee_name ?? (sudden ? "Reviewer" : question.assignee)}
+          {" · "}{question.priority} priority{question.due ? " · Due " + question.due : ""}
         </p>
-        <button className="text-button" onClick={onInspect}>
-          Open evidence and answer
-          <ArrowUpRight size={14} />
-        </button>
+        <EvidenceDisclosure load={() => api(`/questions/${question.id}/evidence`)} />
+        {latest && (
+          <div className="question-answer">
+            <strong>Latest answer from {latest.by}</strong>
+            <p>{latest.text}</p>
+            {latest.follow_up && <p><strong>Suggested follow-up</strong> {latest.follow_up}</p>}
+          </div>
+        )}
+        {question.can_confirm && (
+          <button className="secondary" disabled={busy} onClick={() =>
+            act(() => api(`/questions/${question.id}/confirm`, "POST"), "Answer confirmed. Approve the claim in Review before publishing.")
+          }>Confirm answer for review</button>
+        )}
       </div>
-      {reviewer && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            act(
-              () =>
-                api("/questions/assign", "POST", {
-                  claim_id: claim.id,
-                  priority,
-                  assignee: sudden ? "reviewer" : assignee,
-                  due: due || null,
-                }),
-              "Question assignment saved.",
-            );
-          }}
-        >
+      {canRoute && (
+        <form onSubmit={(event) => {
+          event.preventDefault();
+          const fields = new FormData(event.currentTarget);
+          const target = String(fields.get("target"));
+          act(() => api("/questions/assign", "POST", {
+            claim_id: question.claim_id,
+            priority: fields.get("priority"),
+            due: fields.get("due") || null,
+            assignee: target === "leaver" ? "leaver" : "reviewer",
+            assignee_id: target.startsWith("member:") ? target.slice(7) : null,
+          }), "Question routing saved.");
+        }}>
           <div className="form-columns">
             <label>
-              Route to
-              <select
-                disabled={sudden}
-                value={sudden ? "reviewer" : assignee}
-                onChange={(e) =>
-                  setAssignee(e.target.value as "reviewer" | "leaver")
-                }
-              >
-                <option value="leaver">Departing member</option>
-                <option value="reviewer">Reviewer / teammate</option>
-              </select>
-            </label>
-            <label>
-              Priority
-              <select
-                value={priority}
-                onChange={(e) =>
-                  setPriority(e.target.value as "high" | "medium" | "low")
-                }
-              >
-                {["high", "medium", "low"].map((x) => (
-                  <option key={x}>{x}</option>
+              Assign to
+              <select name="target" defaultValue={question.assignee_id ? "member:" + question.assignee_id : sudden ? "reviewer" : question.assignee}>
+                <option value="reviewer">Reviewer</option>
+                {!sudden && <option value="leaver">Departing member</option>}
+                {members.filter((member) => !sudden || member.role !== "leaver").map((member) => (
+                  <option key={member.id} value={"member:" + member.id}>{member.name} · {member.role}</option>
                 ))}
               </select>
             </label>
             <label>
+              Priority
+              <select name="priority" defaultValue={question.priority}>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </label>
+            <label>
               Due date
-              <input
-                type="date"
-                value={due}
-                onChange={(e) => setDue(e.target.value)}
-              />
+              <input name="due" type="date" defaultValue={question.due ?? ""} />
             </label>
           </div>
-          <button className="secondary" disabled={busy}>
-            Save assignment
-          </button>
+          <button className="secondary" disabled={busy}>Save assignment</button>
+        </form>
+      )}
+      {question.can_answer && (
+        <form onSubmit={(event) => {
+          event.preventDefault();
+          act(async () => {
+            await api(`/questions/${question.id}/answer`, "POST", { text: answer, uncertain });
+            setAnswer("");
+            setUncertain(false);
+          }, "Answer saved for reviewer confirmation.");
+        }}>
+          <label>
+            {latest?.follow_up ? "Follow-up answer" : "Answer"}
+            <textarea value={answer} onChange={(event) => setAnswer(event.target.value)} required maxLength={2000} />
+          </label>
+          {!latest && question.answer_hint && <p className="muted">{question.answer_hint}</p>}
+          <label className="check-label">
+            <input type="checkbox" checked={uncertain} onChange={(event) => setUncertain(event.target.checked)} />
+            I still need to verify this answer
+          </label>
+          <button className="primary" disabled={busy}>Send answer for review</button>
         </form>
       )}
     </article>
@@ -492,9 +518,7 @@ export function TeamPanel({
         <div>
           <strong>Named accounts, scoped to the project</strong>
           <p>
-            Create a one-time invitation. The recipient chooses their own
-            password. Invitations expire after 24 hours and are never emailed
-            automatically.
+            Invite a new or existing username to this project. Invitations expire after 24 hours.
           </p>
         </div>
       </div>
@@ -580,7 +604,7 @@ export function TeamPanel({
               onClick={() =>
                 act(
                   () => api("/members/" + m.id, "PATCH", { active: !m.active }),
-                  "Member access updated; existing sessions revoked.",
+                  "Access to this project updated.",
                 )
               }
             >
@@ -590,8 +614,7 @@ export function TeamPanel({
         ))}
         {!members.length && (
           <p className="advanced-help" style={{ padding: 20 }}>
-            No named accounts yet. The four synthetic demonstration accounts
-            remain available in demo mode.
+            No named members yet.
           </p>
         )}
       </div>
@@ -618,7 +641,7 @@ export function JoinWorkspace({
       <h1>Join your project.</h1>
       <p>
         Use the one-time code provided by your reviewer. Your project role is
-        set by the invitation.
+        set by the invitation. Enter your existing password if you already have an account.
       </p>
       <form
         onSubmit={async (e) => {
@@ -647,7 +670,7 @@ export function JoinWorkspace({
           />
         </label>
         <label>
-          Choose a password (at least 12 characters)
+          Account password (at least 12 characters)
           <input
             required
             type="password"
@@ -664,7 +687,7 @@ export function JoinWorkspace({
           </div>
         )}
         <button className="primary full" disabled={busy}>
-          {busy ? "Joining…" : "Create my account"}
+          {busy ? "Joining…" : "Join project"}
         </button>
       </form>
       <div className="login-extra">

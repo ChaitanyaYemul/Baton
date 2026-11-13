@@ -22,6 +22,11 @@ class AuthConnection:
     def begin(self):
         self.connection.execute("set local search_path = baton_private, pg_catalog")
         self.connection.execute("select set_config('baton.auth_phase','1',true)")
+    def create_workspace(self, workspace_id, data):
+        self.connection.execute("select set_config('baton.workspace_id',%s,true)",(str(workspace_id),))
+        self.connection.execute("select set_config('baton.viewer_role','reviewer',true)")
+        meta = {key:data[key] for key in ('project','mode','sudden_exit')}
+        self.connection.execute('insert into public.baton_workspace(id,body) values(%s,%s)',(workspace_id,Jsonb(meta)))
     def execute(self, sql, params=()):
         sql = sql.replace('?', '%s')
         if sql.startswith('INSERT OR REPLACE INTO users'):
@@ -46,9 +51,9 @@ def _rows(connection, table):
     # Callers choose from hard-coded internal table names, never request input.
     return [r[0] for r in connection.execute('select body from '+table).fetchall()]
 
-def _load(connection, initial):
+def _load(connection, initial, workspace_id):
     result=initial()
-    row=connection.execute('select body from public.baton_workspace where id=1').fetchone()
+    row=connection.execute('select body from public.baton_workspace where id=%s',(workspace_id,)).fetchone()
     if not row:
         raise PermissionError('Workspace access denied by database policy')
     result.update(row[0])
@@ -87,10 +92,10 @@ def _sync_records(con, table, before, after, allow_delete=False, extra=None):
         else:
             con.execute('insert into '+table+'('+','.join(names)+') values('+','.join(['%s']*len(names))+')',args)
 
-def _save(con,before,after,role):
+def _save(con,before,after,role,workspace_id):
     meta={k:after[k] for k in ('project','mode','sudden_exit')}
     if any(before.get(k)!=v for k,v in meta.items()):
-        con.execute('update public.baton_workspace set body=%s where id=1',(Jsonb(meta),))
+        con.execute('update public.baton_workspace set body=%s where id=%s',(Jsonb(meta),workspace_id))
     _sync_records(con,'public.baton_sources',before['sources'],after['sources'],allow_delete=role=='reviewer')
     old_claims={(0,c['id']):c for c in before['claims']}
     new_claims={(0,c['id']):c for c in after['claims']}
@@ -111,18 +116,18 @@ def _save(con,before,after,role):
             con.execute('update public.baton_claims set body=%s,evidence_ids=%s where revision=%s and id=%s',(Jsonb(claim),ids,rev,cid))
         else:
             con.execute('insert into public.baton_claims(revision,id,body,evidence_ids) values(%s,%s,%s,%s)',(rev,cid,Jsonb(claim),ids))
-            con.execute('insert into public.baton_claim_index values(%s,%s)',(rev,cid))
+            con.execute('insert into public.baton_claim_index(revision,id) values(%s,%s)',(rev,cid))
     for version in after['versions']:
         if not any(v['number']==version['number'] for v in before['versions']):
             body={k:v for k,v in version.items() if k!='claims'}
             body['count']=len(version['claims'])
-            con.execute('insert into public.baton_versions values(%s,%s)',(version['number'],Jsonb(body)))
+            con.execute('insert into public.baton_versions(number,body) values(%s,%s)',(version['number'],Jsonb(body)))
     for table,key in [('public.baton_audit','audit'),('public.baton_acknowledgements','acks')]:
         previous={_event_id(e) for e in before[key]}
         for event in after[key]:
             eid=_event_id(event)
             if eid not in previous:
-                con.execute('insert into '+table+' values(%s,%s) on conflict do nothing',(eid,Jsonb(event)))
+                con.execute('insert into '+table+' (id,body) values(%s,%s) on conflict do nothing',(eid,Jsonb(event)))
     _sync_records(con,'public.baton_actions',before.get('actions',[]),after.get('actions',[]),
                   extra=lambda v:(['claim_id','revision'],[v['claim_id'],v['version']]))
     _sync_records(con,'public.baton_questions',before.get('questions',[]),after.get('questions',[]),
@@ -130,18 +135,31 @@ def _save(con,before,after,role):
     if role=='reviewer':
         for key,value in after['cache'].items():
             if before['cache'].get(key)!=value:
-                con.execute('insert into baton_private.cache values(%s,%s) on conflict(id) do update set body=excluded.body',(key,Jsonb(value)))
+                con.execute('insert into baton_private.cache(id,body) values(%s,%s) '
+                            'on conflict(workspace_id,id) do update set body=excluded.body',(key,Jsonb(value)))
 
 @contextmanager
-def remote_state(initial,role,user_id=None,name=None):
+def remote_state(initial,role,user_id=None,name=None,workspace_id=1):
     if role not in ('reviewer','successor','coordinator','leaver'):
         raise PermissionError('Authenticated role required')
     with open_connection() as con:
+        con.execute("select set_config('baton.workspace_id',%s,true)",(str(workspace_id),))
         con.execute("select set_config('baton.viewer_role',%s,true)",(role,))
         con.execute("select set_config('baton.viewer_id',%s,true)",(user_id or role,))
         con.execute("select set_config('baton.viewer_name',%s,true)",(name or '',))
-        con.execute('select pg_advisory_xact_lock(7261401)')
-        state=_load(con,initial)
+        con.execute('select pg_advisory_xact_lock(7261401,%s)',(workspace_id,))
+        if user_id and user_id != role:
+            con.execute("select set_config('baton.auth_phase','1',true)")
+            membership = con.execute(
+                'select role from baton_private.memberships where workspace_id=%s and account_id=%s and active for share',
+                (workspace_id,user_id),
+            ).fetchone()
+            con.execute("select set_config('baton.auth_phase','0',true)")
+            if not membership or membership[0] != role:
+                raise PermissionError('Project membership is no longer active')
+        elif workspace_id != 1:
+            raise PermissionError('Shared role credentials only access the demonstration project')
+        state=_load(con,initial,workspace_id)
         before=copy.deepcopy(state)
         yield state
-        _save(con,before,state,role)
+        _save(con,before,state,role,workspace_id)

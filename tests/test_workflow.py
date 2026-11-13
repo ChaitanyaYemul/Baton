@@ -233,6 +233,134 @@ def test_named_accounts_invites_and_immediate_revocation(clients):
     assert member.get('/api/workspace').status_code==401
     assert member.post('/api/login',json={'username':'taylor','password':'synthetic-only-password'}).status_code==401
 
+
+def join_project(reviewer, username, role='successor', member=None):
+    if member is None:
+        member = TestClient(main.app, headers={'X-Baton-Request':'1'})
+    password = 'synthetic-only-password'
+    invitation = reviewer.post('/api/invites',json={'username':username,'name':username.title(),'role':role})
+    assert invitation.status_code == 200, invitation.text
+    registration = member.post('/api/register',json={'code':invitation.json()['code'],'password':password})
+    assert registration.status_code == 200, registration.text
+    login = member.post('/api/login',json={'username':username,'password':password})
+    assert login.status_code == 200, login.text
+    member_id = next(m['id'] for m in reviewer.get('/api/members').json() if m['username'] == username)
+    return member, member_id
+
+
+def test_project_memberships_keep_sources_history_and_exports_separate(clients):
+    demo = clients['reviewer']
+    taylor, taylor_id = join_project(demo,'taylor')
+    assert demo.post('/api/projects',json={'name':'Shared account project'}).status_code == 403
+    first = setup(demo)
+    finish(demo)
+
+    project = taylor.post('/api/projects',json={'name':'Second project'})
+    assert project.status_code == 201, project.text
+    project_id = project.json()['id']
+    taylor.headers['X-Baton-Project'] = str(project_id)
+    assert taylor.get('/api/workspace').json()['sources'] == []
+    assert taylor.get('/api/workspace').json()['user']['role'] == 'reviewer'
+    second = setup(taylor)
+    finish(taylor)
+    taylor_claim = next(c for c in second['claims'] if c['status'] == 'verified')
+    demo_claim = next(c for c in first['claims'] if c['status'] == 'verified')
+    assert taylor.get(f"/api/evidence/{demo_claim['id']}?version=1").status_code == 404
+    assert demo.get(f"/api/evidence/{taylor_claim['id']}?version=1").status_code == 404
+    assert 'Second project' in taylor.get(f'/api/export/md?project={project_id}').text
+    assert taylor.get('/api/versions/1').json()['number'] == 1
+    assert demo.get('/api/versions/1').json()['number'] == 1
+
+    sam, sam_id = join_project(taylor,'sam')
+    sam.headers['X-Baton-Project'] = str(project_id)
+    assert sam.get('/api/workspace').json()['user']['role'] == 'successor'
+    denied = {'X-Baton-Project':'1'}
+    for path in ('/api/workspace','/api/versions/1','/api/export/md','/api/members',
+                 f"/api/evidence/{demo_claim['id']}?version=1"):
+        assert sam.get(path, headers=denied).status_code == 404
+    del sam.headers['X-Baton-Project']
+    assert sam.get('/api/export/pdf?project=1').status_code == 404
+    assert sam.get(f'/api/export/pdf?project={project_id}').content.startswith(b'%PDF')
+    assert demo.patch(f'/api/members/{sam_id}',json={'active':False}).status_code == 404
+
+    join_project(demo,'sam','coordinator',member=sam)
+    assert sam.get('/api/workspace',headers=denied).json()['user']['role'] == 'coordinator'
+    assert sam.get('/api/workspace',headers={'X-Baton-Project':str(project_id)}).json()['user']['role'] == 'successor'
+    assert demo.patch(f'/api/members/{taylor_id}',json={'active':False}).status_code == 200
+    assert taylor.get('/api/workspace',headers=denied).status_code == 404
+    assert taylor.get('/api/workspace').json()['user']['role'] == 'reviewer'
+
+
+def test_adaptive_questions_require_named_answer_and_reviewer_confirmation(clients):
+    reviewer = clients['reviewer']
+    ws = setup(reviewer)
+    member, member_id = join_project(reviewer,'casey')
+    assert reviewer.post('/api/questions/generate').json()['created'] >= 1
+    assert reviewer.post('/api/questions/generate').json()['created'] == 0
+    question = reviewer.get('/api/workspace').json()['questions'][0]
+    assert question['prompt'] and question['answer_hint']
+    assert question['claim_id'] in {c['id'] for c in ws['claims'] if c['status'] == 'gap'}
+    result = reviewer.post('/api/questions/assign',json={
+        'claim_id':question['claim_id'],'assignee':'reviewer','assignee_id':member_id,'priority':'high',
+    })
+    assert result.status_code == 200, result.text
+    route = f"/api/questions/{question['id']}"
+    assert member.get('/api/workspace').json()['claims'] == []
+    assert member.get(route+'/evidence').json()[0]['quote']
+    assert clients['successor'].get(route+'/evidence').status_code == 404
+    assert clients['successor'].post(route+'/answer',json={'text':'Not sure'}).status_code == 404
+    assert reviewer.post(route+'/confirm').status_code == 409
+    assert member.post(route+'/answer',json={'text':'Not sure'}).json()['follow_up']
+    assert reviewer.post(route+'/confirm').status_code == 409
+    answer = 'Casey will own the nightly cleanup job. The steps are in the operations notes.'
+    assert member.post(route+'/answer',json={'text':answer}).json()['follow_up'] is None
+    assert reviewer.post('/api/publish').status_code == 400
+    assert reviewer.post(route+'/confirm').status_code == 200
+    claim = next(c for c in reviewer.get('/api/workspace').json()['claims'] if c['id']==question['claim_id'])
+    assert claim['status'] == 'attested' and claim['review'] == 'pending'
+    assert claim['text'] == answer
+    assert claim['attestation']['by'] == 'Casey'
+    finish(reviewer)
+    approved = member.get('/api/workspace').json()['approved_claims']
+    assert any(c.get('text') == answer for c in approved)
+    assert not any('Not sure' in c.get('text','') for c in approved)
+
+
+def test_catch_up_uses_personal_receipts_and_current_source_permissions(clients):
+    reviewer = clients['reviewer']
+    setup(reviewer)
+    finish(reviewer)
+    early, _ = join_project(reviewer,'early')
+    later, _ = join_project(reviewer,'later')
+    assert early.post('/api/acknowledge',json={'section':'decisions'}).status_code == 200
+    old = next(c for c in reviewer.get('/api/workspace').json()['approved_claims'] if c.get('type') == 'risk')
+    assert reviewer.patch('/api/claims/'+old['id'],json={
+        'action':'attest','text':old['text'],'owner':'Casey',
+    }).status_code == 200
+    assert reviewer.post('/api/sources',json={
+        'name':'release.md','text':'Risk: The nightly registration job is blocked by the release freeze. Owner: Casey.',
+        'kind':'notes','access':'core','authorised':True,
+    }).status_code == 200
+    assert reviewer.post('/api/reconstruct').status_code == 200
+    finish(reviewer)
+    risk = next(c for c in reviewer.get('/api/workspace').json()['approved_claims'] if 'release freeze' in c['text'])
+    assert reviewer.post('/api/actions',json={
+        'claim_id':risk['id'],'title':'Resolve release freeze','owner':'Casey','status':'blocked','due':'2020-01-01',
+    }).status_code == 200
+    assert later.post('/api/acknowledge',json={'section':'risks'}).status_code == 200
+    first = early.get('/api/workspace').json()['catch_up']
+    second = later.get('/api/workspace').json()['catch_up']
+    assert first['baseline']['version'] == 1 and second['baseline']['version'] == 2
+    assert first['responsibilities'][0]['owner'] == 'Casey' and second['responsibilities'] == []
+    assert [r['id'] for r in first['risks']] == [risk['id']] and second['risks'] == []
+    assert first['actions'][0]['overdue'] and first['actions'][0]['status'] == 'blocked'
+    evidence = f"/api/evidence/{risk['id']}?version=2"
+    assert early.get(evidence).status_code == 200
+    assert reviewer.patch('/api/sources/'+risk['evidence'][0]['source_id'],json={'access':'leads'}).status_code == 200
+    restricted = early.get('/api/workspace').json()['catch_up']
+    assert restricted['risks'] == [] and restricted['actions'] == []
+    assert early.get(evidence).status_code == 404
+
 def test_disabling_demo_rejects_previously_seeded_demo_passwords(clients,monkeypatch):
     monkeypatch.setenv('BATON_DEMO','0')
     for role in main.ROLES:

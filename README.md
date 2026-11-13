@@ -1,6 +1,6 @@
 # Baton
 
-**A handover that shows its receipts.** Built for the Knowledge Handover Challenge, Round 2, by Chaitanya Shrikant Yemul.
+**A handover that shows its receipts.** Built for the Knowledge Handover Challenge by Chaitanya Shrikant Yemul.
 
 Baton turns authorised notes, task exports, git history and conversations into an evidence-linked claim ledger. A reviewer resolves uncertainty and publishes a numbered snapshot. Successors receive approved knowledge filtered by their access to **all** its underlying evidence.
 
@@ -67,9 +67,9 @@ For Groq, set `LLM_PROVIDER=groq` and `GROQ_API_KEY` locally. The default model 
 | `GEMINI_API_KEY` | Optional Google model credential, backend only. |
 | `GEMINI_MODEL` | Configurable model ID; default `gemini-2.5-flash`. Check availability with your provider. |
 
-Never enable demo credentials for confidential data. Production uses `BATON_DEMO=0`, a unique reviewer password, HTTPS and secure cookies. Other users join through reviewer-issued invitations. Named memberships have four permission roles in one workspace. Authentication is application-managed; Supabase Auth, SSO, password recovery and organisation-wide multi-tenancy remain future work.
+Never enable demo credentials for confidential data. Production uses `BATON_DEMO=0`, HTTPS and secure cookies. Round 3 scopes shared logins to the original demonstration project. Named accounts can create and switch projects, accept project invitations and hold a different role in each project. Authentication is application-managed. Supabase Auth, SSO and password recovery remain future work.
 
-In **Handover**, create actions linked to approved evidence, set owners/deadlines, and schedule Day 1/Week 1/Day 30 work. Assigned owners can update status; reassignment requires the reviewer. Changes invalidate receipts. **Ask the leaver** adds priority, due dates and reviewer/departing-member routing with sudden-exit fallback. Version diffs cover owner/status/type/attestation as well as text; historical receipts use their original version.
+In **Handover**, create evidence-linked actions and open **Your catch-up** for ownership changes, new approved risks and overdue or blocked actions. Catch-up uses your own acknowledgement and links to versioned evidence. In **Questions**, generate prompts from unresolved gaps, assign an eligible teammate and confirm a complete answer before approving the claim. Short or uncertain replies suggest a follow-up.
 
 ## Validation
 
@@ -84,6 +84,7 @@ With `DATABASE_URL` configured, `python scripts/check_rls.py` runs rollback-only
 
 ## Submission material
 
+- [Round 3 report and verification walkthrough](docs/ROUND3.md)
 - [Round 2 submission and feature matrix](docs/ROUND2.md)
 - [Architecture, evidence contract and privacy](docs/ARCHITECTURE.md)
 - [External tools and AI disclosure](docs/DISCLOSURES.md)

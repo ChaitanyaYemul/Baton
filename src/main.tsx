@@ -35,6 +35,7 @@ import {
   type Assignment,
 } from "./Advanced";
 import "./theme.css";
+import { CatchUp, Projects, type CatchUpData, type Project } from "./Round3";
 
 type Evidence = {
   source_id: string;
@@ -71,6 +72,10 @@ type Source = {
 };
 type Workspace = {
   project: string;
+  workspace_id: number;
+  projects: Project[];
+  can_create_project: boolean;
+  catch_up: CatchUpData;
   user: { name: string; role: string; id: string };
   claims: Claim[];
   sources: Source[];
@@ -105,18 +110,23 @@ const nav = [
   { id: "people", label: "Team access", icon: Users },
 ];
 async function api(path: string, method = "GET", data?: unknown) {
+  const project = sessionStorage.getItem("baton-project");
   const response = await fetch("/api" + path, {
     method,
-    headers: { "Content-Type": "application/json", "X-Baton-Request": "1" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Baton-Request": "1",
+      ...(project ? { "X-Baton-Project": project } : {}),
+    },
     body: data === undefined ? undefined : JSON.stringify(data),
   });
   const result = await response.json();
   if (!response.ok)
-    throw new Error(
+    throw Object.assign(new Error(
       typeof result.detail === "string"
         ? result.detail
         : "Request failed. Check your input and try again.",
-    );
+    ), { status: response.status });
   return result;
 }
 function Badge({ value }: { value?: string }) {
@@ -175,7 +185,16 @@ function App() {
       removed_count: number;
     } | null>(null);
   const load = async () => {
-    const data = await api("/workspace");
+    const project = sessionStorage.getItem("baton-project");
+    let data: Workspace;
+    try {
+      data = await api("/workspace");
+    } catch (error) {
+      if (!project || (error as { status?: number }).status !== 404) throw error;
+      sessionStorage.removeItem("baton-project");
+      data = await api("/workspace");
+    }
+    sessionStorage.setItem("baton-project", String(data.workspace_id));
     setWs(data);
     return data;
   };
@@ -234,6 +253,7 @@ function App() {
       setError((e as Error).message);
     } finally {
       setBusy(false);
+      setChecking(false);
     }
   }
   async function inspect(c: Claim) {
@@ -248,9 +268,9 @@ function App() {
           : page === "handover"
             ? ws?.versions.length
             : undefined;
-      setEvidence(
-        await api("/evidence/" + c.id + (version ? "?version=" + version : "")),
-      );
+      const project = sessionStorage.getItem("baton-project");
+      const entries = await api("/evidence/" + c.id + (version ? "?version=" + version : ""));
+      if (project === sessionStorage.getItem("baton-project")) setEvidence(entries);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -260,6 +280,22 @@ function App() {
     setQuery("");
     setFilter("all");
     setVersionView(null);
+  }
+  function selectProject(id: number) {
+    sessionStorage.setItem("baton-project", String(id));
+    setChecking(true);
+    setWs(null);
+    setSelected(null);
+    setEvidence([]);
+    setImportOpen(false);
+    setSourceName("");
+    setSourceText("");
+    setRepo("");
+    setAuthorised(false);
+    setQuestion("");
+    setAnswers([]);
+    setAnswerText("");
+    navigateTo("overview");
   }
   const reviewer = ws?.user.role === "reviewer";
   const claims = ws?.claims || [],
@@ -520,13 +556,18 @@ function App() {
           <span className="logo-symbol"><img src="/assets/images/baton-logo.png" alt="" /></span>baton
         </a>
 
-        <div className="project-picker">
-          <span className="project-icon">F</span>
-          <span>
-            Fest registration<small>Project handover</small>
-          </span>
-          <ChevronRight size={15} />
-        </div>
+        <Projects
+          key={ws.workspace_id}
+          projects={ws.projects}
+          current={ws.workspace_id}
+          canCreate={ws.can_create_project}
+          busy={busy}
+          onSwitch={(id) => act(async () => selectProject(id))}
+          onCreate={(name) => act(async () => {
+            const project = await api("/projects", "POST", { name });
+            selectProject(project.id);
+          }, "Project created. Add sources or invite teammates.")}
+        />
 
         <nav className="workspace-nav" aria-label="Workspace navigation">
           {nav
@@ -570,6 +611,7 @@ function App() {
             onClick={() =>
               act(async () => {
                 await api("/logout", "POST");
+                sessionStorage.removeItem("baton-project");
                 setWs(null);
                 window.location.reload();
               })
@@ -582,7 +624,7 @@ function App() {
       <div className="main-shell">
         <header className="topbar">
           <div className="breadcrumb">
-            Workspace <ChevronRight size={13} /> Fest registration{" "}
+            Workspace <ChevronRight size={13} /> {ws.project}{" "}
             <ChevronRight size={13} />
             <strong>{nav.find((n) => n.id === page)?.label}</strong>
           </div>
@@ -594,11 +636,11 @@ function App() {
             <span className="avatar small">{ws.user.name[0]}</span>
           </div>
         </header>
-        <main className="content">
+        <main className="content" key={ws.workspace_id}>
           <div className="page-heading">
             <div>
               <span className="eyebrow">
-                FEST REGISTRATION PORTAL{" "}
+                  {ws.project}{" "}
                 <span className="muted">/ HANDOVER 001</span>
               </span>
               <h1>
@@ -1032,13 +1074,10 @@ function App() {
                 <CircleHelp />
                 <div>
                   <strong>
-                    {ws.sudden_exit
-                      ? "Sudden-exit mode · Ask the reviewer or teammates"
-                      : "Planned exit · Ask Aarav before the handover"}
+                    {ws.sudden_exit ? "Sudden exit" : "Planned exit"}
                   </strong>
                   <p>
-                    Answers become named attestations. They still need reviewer
-                    approval.
+                    A reviewer confirms an answer, then approves it for publication.
                   </p>
                 </div>
                 {reviewer && (
@@ -1067,7 +1106,7 @@ function App() {
                 sudden={ws.sudden_exit}
                 onInspect={inspect}
               />
-              {!gaps.length && (
+              {!gaps.length && !ws.questions.length && (
                 <div className="empty">
                   <CheckCheck />
                   <h2>No open gap questions</h2>
@@ -1174,6 +1213,11 @@ function App() {
               </div>
               {ws.versions.length > 0 && (
                 <>
+                  <CatchUp
+                    key={ws.catch_up.latest_version}
+                    data={ws.catch_up}
+                    evidence={(id, version) => api(`/evidence/${id}?version=${version}`)}
+                  />
                   <ActionBoard
                     actions={ws.actions || []}
                     claims={ws.approved_claims || []}
@@ -1200,11 +1244,11 @@ function App() {
                       cannot be revoked.
                     </span>
                     <div>
-                      <a className="secondary" href="/api/export/md">
+                      <a className="secondary" href={`/api/export/md?project=${ws.workspace_id}`}>
                         <Download size={16} />
                         Markdown
                       </a>
-                      <a className="secondary" href="/api/export/pdf">
+                      <a className="secondary" href={`/api/export/pdf?project=${ws.workspace_id}`}>
                         <Download size={16} />
                         PDF
                       </a>
