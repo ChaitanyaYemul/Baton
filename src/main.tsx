@@ -442,7 +442,7 @@ function App() {
           </div>
         </div>
         <div className="login-form">
-          <span className="badge verified">Round 2 · working build</span>
+          <span className="badge verified">Round 3 · The Finish</span>
           <h2>Pick up the baton.</h2>
           <p>Sign in to the project workspace.</p>
           <form
