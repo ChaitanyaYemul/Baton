@@ -673,6 +673,8 @@ def publish(request: Request):
         snapshot = copy.deepcopy(claims)
         for item in snapshot:
             item.pop('question_assignee_id', None)
+        if s['versions'] and {c['id']:c for c in s['versions'][-1]['claims']} == {c['id']:c for c in snapshot}:
+            return {'number':s['versions'][-1]['number'],'unchanged':True}
         version={'number':len(s['versions'])+1,'at':now(),'by':actor_name(role),'claims':snapshot}
         s['versions'].append(version)
         audit(s,role,'Published approved handover',f"Version {version['number']}")
@@ -718,6 +720,9 @@ def acknowledge(body: AckIn,request: Request):
     with state(role) as s:
         if not s['versions']: raise HTTPException(400,'No published version')
         digest=receipt_hash(s)
+        if any(a.get('user_id',a['role'])==actor_id(role) and a['section']==body.section
+               and a['version']==len(s['versions']) and a['access_hash']==digest for a in s['acks']):
+            return {'ok':True}
         a={'role':role,'user_id':actor_id(role),'by':actor_name(role),'section':body.section,'version':len(s['versions']),'access_hash':digest,'at':now()}
         s['acks'].append(a); audit(s,role,'Acknowledged '+body.section,f"Version {len(s['versions'])}")
     return {'ok':True}

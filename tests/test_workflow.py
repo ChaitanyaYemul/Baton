@@ -361,6 +361,19 @@ def test_catch_up_uses_personal_receipts_and_current_source_permissions(clients)
     assert restricted['risks'] == [] and restricted['actions'] == []
     assert early.get(evidence).status_code == 404
 
+def test_repeating_publish_and_acknowledgement_keeps_one_record(clients):
+    reviewer = clients['reviewer']
+    successor = clients['successor']
+    setup(reviewer)
+    finish(reviewer)
+    assert reviewer.post('/api/publish').json() == {'number':1,'unchanged':True}
+    for _ in range(2):
+        assert successor.post('/api/acknowledge',json={'section':'decisions'}).status_code == 200
+    workspace = successor.get('/api/workspace').json()
+    assert len(workspace['versions']) == 1
+    assert len(workspace['acks']) == 1
+
+
 def test_disabling_demo_rejects_previously_seeded_demo_passwords(clients,monkeypatch):
     monkeypatch.setenv('BATON_DEMO','0')
     for role in main.ROLES:

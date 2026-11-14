@@ -699,6 +699,15 @@ function App() {
           )}
           {page === "overview" && (
             <>
+              {ws.user.id === "reviewer" && ws.workspace_id === 1 && !ws.demo && (
+                <section className="callout" aria-label="Judge quick start">
+                  <div>
+                    <strong>Judge quick start</strong>
+                    <p>Open the published campus-fest handover to check a claim and its evidence. In Questions, a reviewer can generate prompts from unresolved draft gaps. Try only synthetic or public data in this shared workspace.</p>
+                  </div>
+                  <button className="secondary" onClick={() => navigateTo("handover")}>Open sample handover</button>
+                </section>
+              )}
               <section className="handover-banner">
                 <div>
                   <span className="eyebrow">
@@ -1202,7 +1211,7 @@ function App() {
                     onClick={() =>
                       act(
                         () => api("/publish", "POST"),
-                        "Approved handover published. Successors can now open it.",
+                        "The approved handover is available to successors.",
                       )
                     }
                   >
